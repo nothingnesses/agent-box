@@ -6,8 +6,8 @@
 - format code with `cargo fmt`
 - check code with `cargo check`
 - check clippy with `cargo clippy`
-- always keep the docs and readme in sync with the code changes
-- keep the table of contents in the @README.md up to date whenever a change is made
+- always keep the docs and README files in sync with the code changes (root and crate-level READMEs)
+- keep the table of contents in the root `README.md` up to date whenever a change is made
 
 ## image
 
