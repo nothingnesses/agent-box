@@ -9,6 +9,7 @@ use nix::sys::socket::{getsockopt, sockopt::PeerCredentials};
 use rmp_serde::{from_read, to_vec_named};
 use std::collections::{HashMap, VecDeque};
 use std::fs;
+use std::io::IsTerminal;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -17,6 +18,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use tracing::{debug, error, info, warn};
+use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
 #[command(name = "agent-portal-host")]
@@ -82,9 +85,23 @@ struct AppState {
     prompt_inflight: Arc<AtomicUsize>,
 }
 
+fn init_logging() {
+    let env_filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("info,agent_portal_host=info"));
+
+    tracing_subscriber::fmt()
+        .with_env_filter(env_filter)
+        .with_ansi(std::io::stderr().is_terminal())
+        .with_target(true)
+        .pretty()
+        .init();
+}
+
 fn main() {
+    init_logging();
+
     if let Err(e) = run() {
-        eprintln!("Error: {e}");
+        error!(error = %e, "portal host failed");
         std::process::exit(1);
     }
 }
@@ -116,7 +133,15 @@ fn run() -> Result<()> {
     fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600))
         .wrap_err("failed to set socket permissions")?;
 
-    eprintln!("agent-portal-host listening on {}", socket_path.display());
+    info!(socket = %socket_path.display(), "agent-portal-host listening");
+    debug!(config = ?portal, "loaded portal config");
+    debug!(
+        max_inflight = portal.limits.max_inflight,
+        rate_per_minute = portal.limits.rate_per_minute,
+        rate_burst = portal.limits.rate_burst,
+        prompt_queue = portal.limits.prompt_queue,
+        "runtime limits"
+    );
 
     let state = AppState {
         cfg: portal.clone(),
@@ -132,7 +157,7 @@ fn run() -> Result<()> {
         let stream = match incoming {
             Ok(s) => s,
             Err(e) => {
-                eprintln!("accept error: {e}");
+                warn!(error = %e, "accept error");
                 continue;
             }
         };
@@ -158,6 +183,13 @@ fn run() -> Result<()> {
 
 fn handle_client(mut stream: UnixStream, state: &AppState) -> Result<()> {
     let identity = peer_identity(&stream)?;
+    debug!(
+        pid = identity.pid,
+        uid = identity.uid,
+        gid = identity.gid,
+        container_id = identity.container_id.as_deref().unwrap_or("(none)"),
+        "request received"
+    );
     if state.cfg.timeouts.request_ms > 0 {
         stream
             .set_read_timeout(Some(Duration::from_millis(state.cfg.timeouts.request_ms)))
@@ -168,6 +200,7 @@ fn handle_client(mut stream: UnixStream, state: &AppState) -> Result<()> {
     }
 
     let req: PortalRequest = from_read(&mut stream).wrap_err("failed to decode msgpack request")?;
+    debug!(request_id = req.id, method = ?req.method, "decoded request");
 
     let rate_key = identity
         .container_id
@@ -180,6 +213,7 @@ fn handle_client(mut stream: UnixStream, state: &AppState) -> Result<()> {
             .lock()
             .map_err(|_| eyre::eyre!("rate limiter poisoned"))?;
         if !guard.allow(&rate_key) {
+            debug!(key = %rate_key, request_id = req.id, "request rate-limited");
             return send_response(
                 stream,
                 &PortalResponse::err(req.id, "rate_limited", "request rate exceeded"),
@@ -210,6 +244,12 @@ fn handle_client(mut stream: UnixStream, state: &AppState) -> Result<()> {
             let policy = state
                 .cfg
                 .policy_for_container(identity.container_id.as_deref());
+            debug!(
+                request_id = req.id,
+                policy = ?policy.clipboard_read_image,
+                reason = reason.as_deref().unwrap_or("(none)"),
+                "processing clipboard.read_image"
+            );
             let decision = match policy.clipboard_read_image {
                 PolicyDecision::Allow => Ok(true),
                 PolicyDecision::Deny => Ok(false),
@@ -217,8 +257,14 @@ fn handle_client(mut stream: UnixStream, state: &AppState) -> Result<()> {
             };
 
             match decision {
-                Ok(false) => PortalResponse::err(req.id, "denied", "request denied by policy"),
-                Err(e) => PortalResponse::err(req.id, "prompt_failed", e.to_string()),
+                Ok(false) => {
+                    debug!(request_id = req.id, "clipboard.read_image denied");
+                    PortalResponse::err(req.id, "denied", "request denied by policy")
+                }
+                Err(e) => {
+                    debug!(request_id = req.id, error = %e, "clipboard.read_image prompt failed");
+                    PortalResponse::err(req.id, "prompt_failed", e.to_string())
+                }
                 Ok(true) => match clipboard_read_image(
                     &state.cfg.clipboard.allowed_mime,
                     state.cfg.limits.max_clipboard_bytes,
@@ -388,6 +434,7 @@ fn resolve_host_wl_paste_binary() -> String {
 
 fn clipboard_read_image(allowed_mime: &[String], max_bytes: usize) -> Result<(String, Vec<u8>)> {
     let wl_paste_bin = resolve_host_wl_paste_binary();
+    debug!(binary = %wl_paste_bin, "using wl-paste binary");
 
     let types_out = Command::new(&wl_paste_bin)
         .arg("--list-types")
@@ -412,6 +459,7 @@ fn clipboard_read_image(allowed_mime: &[String], max_bytes: usize) -> Result<(St
         .find(|m| offered.iter().any(|o| o == *m))
         .cloned()
         .ok_or_else(|| eyre::eyre!("clipboard does not currently contain an allowed image MIME"))?;
+    debug!(mime = %mime, "selected clipboard mime");
 
     let out = Command::new(&wl_paste_bin)
         .args(["--no-newline", "--type", &mime])
@@ -433,6 +481,8 @@ fn clipboard_read_image(allowed_mime: &[String], max_bytes: usize) -> Result<(St
             max_bytes
         ));
     }
+
+    debug!(bytes = out.stdout.len(), mime = %mime, "clipboard image request accepted");
 
     Ok((mime, out.stdout))
 }

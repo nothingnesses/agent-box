@@ -13,6 +13,16 @@ Portal crate containing host service and official CLI for container-to-host medi
 - `whoami`
 - `clipboard.read_image`
 
+## Logging
+
+`agent-portal-host` uses `tracing` + `RUST_LOG` filtering.
+
+Example:
+
+```bash
+RUST_LOG=debug agent-portal-host
+```
+
 ## Development
 
 From repo root:

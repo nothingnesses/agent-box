@@ -625,11 +625,13 @@ Example:
     # optional:
     # socketPath = "/run/user/1000/agent-portal/portal.sock";
     # wlPasteBinary = "${pkgs.wl-clipboard}/bin/wl-paste";
+    # debug = true;
   };
 }
 ```
 
 `wlPasteBinary` (or env `AGENT_PORTAL_HOST_WL_PASTE`) ensures the host service uses a real host `wl-paste` binary and avoids wrapper recursion.
+Set `debug = true` (or `RUST_LOG=debug`) to enable verbose portal host logs.
 
 ### Wrappers (Transparent Portal Access)
 

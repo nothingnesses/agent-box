@@ -27,6 +27,12 @@ in
       description = "Whether to install wrapper binaries into home.packages.";
     };
 
+    debug = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "Enable verbose logging in agent-portal-host (RUST_LOG=debug).";
+    };
+
     socketPath = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
@@ -53,7 +59,11 @@ in
 
       Service = {
         Type = "simple";
-        Environment = [ "AGENT_PORTAL_HOST_WL_PASTE=${cfg.wlPasteBinary}" ];
+        Environment = [
+          "AGENT_PORTAL_HOST_WL_PASTE=${cfg.wlPasteBinary}"
+        ] ++ lib.optionals cfg.debug [
+          "RUST_LOG=debug"
+        ];
         ExecStart =
           if cfg.socketPath == null then
             "${cfg.package}/bin/agent-portal-host"
