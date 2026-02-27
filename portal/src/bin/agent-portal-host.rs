@@ -92,8 +92,6 @@ fn init_logging() {
     tracing_subscriber::fmt()
         .with_env_filter(env_filter)
         .with_ansi(std::io::stderr().is_terminal())
-        .with_target(true)
-        .pretty()
         .init();
 }
 
