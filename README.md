@@ -30,6 +30,7 @@ Agent Box solves this by:
   - [Network Mode](#network-mode)
   - [Runtime Backends](#runtime-backends)
   - [Portal (Experimental)](#portal-experimental)
+  - [Wrappers (Transparent Portal Access)](#wrappers-transparent-portal-access)
   - [Profiles](#profiles)
   - [Validating Configuration](#validating-configuration)
   - [Previewing Resolved Configuration](#previewing-resolved-configuration)
@@ -48,6 +49,15 @@ Agent Box solves this by:
 ```bash
 cargo install --path ab
 cargo install --path portal
+cargo install --path wrappers
+```
+
+With Nix flakes, wrapper package/app is also exposed:
+
+```bash
+nix build .#wrappers
+nix run .#wrappers -- --help
+nix run .#wl-paste-wrapper -- --list-types
 ```
 
 ## Configuration
@@ -598,6 +608,42 @@ agent-portal-cli clipboard-read-image --out /tmp/clip.bin
 A sample user service unit is available at:
 
 - `contrib/systemd/agent-portal-host.service`
+
+Home Manager module is exposed from this flake as:
+
+- `homeManagerModules.agent-portal`
+
+Example:
+
+```nix
+{
+  imports = [ inputs.agent-box.homeManagerModules.agent-portal ];
+
+  services.agent-portal = {
+    enable = true;
+    # optional:
+    # socketPath = "/run/user/1000/agent-portal/portal.sock";
+  };
+}
+```
+
+### Wrappers (Transparent Portal Access)
+
+To keep agents/tools unaware of the portal API, wrapper binaries are provided in `wrappers/`.
+
+Current wrappers:
+
+- `wl-paste` (portal-backed compatibility wrapper for image clipboard reads)
+- `agent-portal-client` (generic helper CLI for scripts/wrappers)
+
+`wl-paste` wrapper supports the Wayland image flow used by `pi`:
+
+```bash
+wl-paste --list-types
+wl-paste --type image/png --no-newline
+```
+
+It talks to the portal via `AGENT_PORTAL_SOCKET` (or config/default socket path) and returns compatible output so agent workflows remain transparent.
 
 ### Profiles
 

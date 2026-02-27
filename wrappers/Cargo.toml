@@ -1,0 +1,17 @@
+[package]
+name = "agent-wrappers"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "wl-paste"
+path = "src/bin/wl-paste.rs"
+
+[[bin]]
+name = "agent-portal-client"
+path = "src/bin/agent-portal-client.rs"
+
+[dependencies]
+agent-box-common = { path = "../common" }
+clap = { version = "4.5.54", features = ["derive"] }
+eyre = "0.6.12"

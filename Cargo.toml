@@ -3,5 +3,6 @@ members = [
   "common",
   "ab",
   "portal",
+  "wrappers",
 ]
 resolver = "3"

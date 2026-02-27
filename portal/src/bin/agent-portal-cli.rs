@@ -1,13 +1,9 @@
-use agent_box_common::config::load_config;
-use agent_box_common::portal::{PortalRequest, PortalResponse, RequestMethod, ResponseResult};
+use agent_box_common::portal::{RequestMethod, ResponseResult};
+use agent_box_common::portal_client::PortalClient;
 use clap::{Parser, Subcommand};
 use eyre::{Context, Result};
-use rmp_serde::{from_read, to_vec_named};
 use std::fs;
-use std::io::Write;
-use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Parser, Debug)]
 #[command(name = "agent-portal-cli")]
@@ -41,11 +37,6 @@ fn main() {
 
 fn run() -> Result<()> {
     let cli = Cli::parse();
-    let config = load_config()?;
-    let socket = cli
-        .socket
-        .unwrap_or_else(|| config.portal.socket_path.clone());
-
     let out_path = match &cli.command {
         Commands::ClipboardReadImage { out, .. } => out.clone(),
         _ => None,
@@ -57,35 +48,13 @@ fn run() -> Result<()> {
         Commands::ClipboardReadImage { reason, .. } => RequestMethod::ClipboardReadImage { reason },
     };
 
-    let req = PortalRequest {
-        version: 1,
-        id: SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64,
-        method,
+    let client = if let Some(socket) = cli.socket {
+        PortalClient::with_socket(socket)
+    } else {
+        PortalClient::from_env_or_config()
     };
 
-    let mut stream = UnixStream::connect(&socket)
-        .wrap_err_with(|| format!("failed to connect to socket {}", socket))?;
-    let bytes = to_vec_named(&req).wrap_err("failed to encode request")?;
-    stream
-        .write_all(&bytes)
-        .wrap_err("failed to write request")?;
-
-    let response: PortalResponse = from_read(&mut stream).wrap_err("failed to decode response")?;
-
-    if !response.ok {
-        let e = response
-            .error
-            .map(|x| format!("{}: {}", x.code, x.message))
-            .unwrap_or_else(|| "unknown error".to_string());
-        return Err(eyre::eyre!(e));
-    }
-
-    let result = response
-        .result
-        .ok_or_else(|| eyre::eyre!("missing response result"))?;
+    let result = client.request(method)?;
 
     match result {
         ResponseResult::Pong { now_unix_ms } => {

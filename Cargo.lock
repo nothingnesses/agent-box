@@ -23,6 +23,7 @@ dependencies = [
  "inquire",
  "jj-lib",
  "nix",
+ "rmp-serde",
  "serde",
  "shell-words",
  "walkdir",
@@ -37,6 +38,15 @@ dependencies = [
  "eyre",
  "nix",
  "rmp-serde",
+]
+
+[[package]]
+name = "agent-wrappers"
+version = "0.1.0"
+dependencies = [
+ "agent-box-common",
+ "clap",
+ "eyre",
 ]
 
 [[package]]

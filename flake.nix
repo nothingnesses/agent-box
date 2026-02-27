@@ -7,11 +7,59 @@
   };
 
   outputs = { self, nixpkgs, flake-utils }:
-    flake-utils.lib.eachDefaultSystem (system:
+    (flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
+
+        wrappers = pkgs.rustPlatform.buildRustPackage {
+          pname = "agent-wrappers";
+          version = "0.1.0";
+          src = ./.;
+          cargoLock.lockFile = ./Cargo.lock;
+
+          cargoBuildFlags = [ "-p" "agent-wrappers" ];
+          cargoTestFlags = [ "-p" "agent-wrappers" ];
+          cargoInstallFlags = [ "-p" "agent-wrappers" ];
+
+          OPENSSL_DIR = "${pkgs.openssl.dev}";
+          OPENSSL_LIB_DIR = "${pkgs.openssl.out}/lib";
+          OPENSSL_INCLUDE_DIR = "${pkgs.openssl.dev}/include";
+        };
+
+        portal = pkgs.rustPlatform.buildRustPackage {
+          pname = "agent-portal";
+          version = "0.1.0";
+          src = ./.;
+          cargoLock.lockFile = ./Cargo.lock;
+
+          cargoBuildFlags = [ "-p" "agent-portal" ];
+          cargoTestFlags = [ "-p" "agent-portal" ];
+          cargoInstallFlags = [ "-p" "agent-portal" ];
+
+          OPENSSL_DIR = "${pkgs.openssl.dev}";
+          OPENSSL_LIB_DIR = "${pkgs.openssl.out}/lib";
+          OPENSSL_INCLUDE_DIR = "${pkgs.openssl.dev}/include";
+        };
       in
       {
+        packages = {
+          wrappers = wrappers;
+          portal = portal;
+          default = wrappers;
+        };
+
+        apps = {
+          wrappers = {
+            type = "app";
+            program = "${wrappers}/bin/agent-portal-client";
+          };
+
+          wl-paste-wrapper = {
+            type = "app";
+            program = "${wrappers}/bin/wl-paste";
+          };
+        };
+
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
             # Rust toolchain
@@ -39,5 +87,11 @@
           OPENSSL_INCLUDE_DIR = "${pkgs.openssl.dev}/include";
         };
       }
-    );
+    ))
+    // {
+      homeManagerModules = {
+        agent-portal = import ./nix/home-manager/agent-portal.nix { inherit self; };
+        default = self.homeManagerModules.agent-portal;
+      };
+    };
 }

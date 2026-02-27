@@ -34,5 +34,7 @@ pkgs.callPackage "${nix}/docker.nix" { ... }
 ## portal ADR
 
 - Portal architecture decisions are tracked in `adr/`.
-- Current accepted ADR: `adr/0001-agent-portal.md`.
-- For portal work, keep implementation and configuration aligned with this ADR.
+- Current accepted ADRs:
+  - `adr/0001-agent-portal.md`
+  - `adr/0002-transparent-portal-wrappers.md`
+- For portal work, keep implementation and configuration aligned with these ADRs.
