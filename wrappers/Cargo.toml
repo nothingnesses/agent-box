@@ -1,7 +1,7 @@
 [package]
 name = "agent-wrappers"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 
 [[bin]]
 name = "wl-paste"
@@ -12,6 +12,6 @@ name = "agent-portal-client"
 path = "src/bin/agent-portal-client.rs"
 
 [dependencies]
-agent-box-common = { path = "../common" }
-clap = { version = "4.5.54", features = ["derive"] }
-eyre = "0.6.12"
+agent-box-common.workspace = true
+clap.workspace = true
+eyre.workspace = true
