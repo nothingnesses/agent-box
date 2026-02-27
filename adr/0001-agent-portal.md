@@ -13,7 +13,7 @@ Directly exposing host Wayland/X11 sockets to containers is too broad and does n
 
 Implement a separate host binary (`agent-portal-host`) that runs as a systemd user service and listens on a Unix socket for container requests.
 
-A debug/testing client (`agent-portal-cli`) will be provided.
+An official CLI client (`agent-portal-cli`) will be provided.
 
 ### 1. Identity and container attribution
 
@@ -85,4 +85,4 @@ A debug/testing client (`agent-portal-cli`) will be provided.
 5. Add prompt adapter with configurable dmenu-style command.
 6. Add policy/rate-limit/timeout plumbing sourced from `~/.agent-box.toml`.
 7. Add structured audit logging.
-8. Add `agent-portal-cli` debug client (`ping`, request method, dump output).
+8. Add `agent-portal-cli` official CLI client (`ping`, request method, dump output).

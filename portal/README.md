@@ -1,11 +1,11 @@
 # agent-portal
 
-Portal crate containing host service and debug CLI for container-to-host mediated access.
+Portal crate containing host service and official CLI for container-to-host mediated access.
 
 ## Binaries
 
 - `agent-portal-host`: host daemon listening on Unix socket
-- `agent-portal-cli`: debug/testing client
+- `agent-portal-cli`: official API/operations CLI client
 
 ## Current Methods
 

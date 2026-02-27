@@ -585,7 +585,7 @@ Agent Box supports two container runtimes:
 Agent Box now ships two portal binaries:
 
 - `agent-portal-host`: host-side broker service (Unix socket + MessagePack)
-- `agent-portal-cli`: debug client for testing requests
+- `agent-portal-cli`: official CLI client for portal requests (usable by tooling/wrappers)
 
 The first implemented method is `clipboard.read_image`.
 

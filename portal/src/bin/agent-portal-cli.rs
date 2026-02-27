@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
 #[command(name = "agent-portal-cli")]
-#[command(about = "Debug client for agent portal host service")]
+#[command(about = "Official CLI client for agent portal host service")]
 struct Cli {
     /// Override socket path
     #[arg(long)]
