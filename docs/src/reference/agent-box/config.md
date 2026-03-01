@@ -216,3 +216,10 @@ ab dbg resolve -p rust -p gpg
 Portal config is defined under `[portal]` in the same file.
 
 See [Portal config](../portal/config.md) and [Portal wrapper contract](../portal/wrapper-contract.md).
+
+## JSON Schema
+
+A machine-readable JSON Schema for the configuration is available for validation, IDE autocompletion, and tool integration.
+
+- [Raw schema file](https://raw.githubusercontent.com/0xferrous/agent-box/main/common/config.schema.json)
+- [GitHub UI view](https://github.com/0xferrous/agent-box/blob/main/common/config.schema.json)

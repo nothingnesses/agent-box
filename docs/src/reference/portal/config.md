@@ -67,3 +67,10 @@ allowed_mime = ["image/png", "image/jpeg", "image/webp"]
 clipboard_read_image = "allow"
 gh_exec = "ask_for_writes"
 ```
+
+## JSON Schema
+
+Portal configuration is part of the overall `~/.agent-box.toml` schema. The full JSON Schema can be used for validation and IDE autocompletion.
+
+- [Raw schema file](https://raw.githubusercontent.com/0xferrous/agent-box/main/common/config.schema.json)
+- [GitHub UI view](https://github.com/0xferrous/agent-box/blob/main/common/config.schema.json)
