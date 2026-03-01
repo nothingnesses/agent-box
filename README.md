@@ -17,12 +17,12 @@ Read the docs in one of these ways:
 
 Entry points:
 
-- **Start here:** `docs/src/index.md`
-- **Choose your path:** `docs/src/choose-your-path.md`
-- **Tutorials:** `docs/src/tutorials/index.md`
-- **How-to guides:** `docs/src/how-to/index.md`
-- **Reference:** `docs/src/reference/index.md`
-- **Explanation + ADRs:** `docs/src/explanation/index.md`
+- **Start here:** [docs/src/index.md](docs/src/index.md)
+- **Choose your path:** [docs/src/choose-your-path.md](docs/src/choose-your-path.md)
+- **Tutorials:** [docs/src/tutorials/index.md](docs/src/tutorials/index.md)
+- **How-to guides:** [docs/src/how-to/index.md](docs/src/how-to/index.md)
+- **Reference:** [docs/src/reference/index.md](docs/src/reference/index.md)
+- **Explanation + ADRs:** [docs/src/explanation/index.md](docs/src/explanation/index.md)
 
 ## Table of Contents
 
@@ -33,15 +33,15 @@ Entry points:
 
 ## Quick links
 
-- Agent-box first run: `docs/src/tutorials/agent-box/first-run.md`
-- Agent-box profiles guide: `docs/src/how-to/agent-box/use-profiles.md`
-- Portal standalone first run: `docs/src/tutorials/portal/first-run-standalone.md`
-- Connect Portal to Agent-box: `docs/src/tutorials/portal-with-agent-box/connect-portal-to-agent-box.md`
-- Agent-box config reference: `docs/src/reference/agent-box/config.md`
-- Agent-box requirements: `docs/src/reference/agent-box/requirements.md`
-- Agent-box workflow internals: `docs/src/explanation/architecture/agent-box-workflow.md`
-- Agent-box CLI reference (generated): `docs/src/reference/agent-box/cli.md`
-- Portal CLI reference (generated): `docs/src/reference/portal/cli.md`
+- Agent-box first run: [docs/src/tutorials/agent-box/first-run.md](docs/src/tutorials/agent-box/first-run.md)
+- Agent-box profiles guide: [docs/src/how-to/agent-box/use-profiles.md](docs/src/how-to/agent-box/use-profiles.md)
+- Portal standalone first run: [docs/src/tutorials/portal/first-run-standalone.md](docs/src/tutorials/portal/first-run-standalone.md)
+- Connect Portal to Agent-box: [docs/src/tutorials/portal-with-agent-box/connect-portal-to-agent-box.md](docs/src/tutorials/portal-with-agent-box/connect-portal-to-agent-box.md)
+- Agent-box config reference: [docs/src/reference/agent-box/config.md](docs/src/reference/agent-box/config.md)
+- Agent-box requirements: [docs/src/reference/agent-box/requirements.md](docs/src/reference/agent-box/requirements.md)
+- Agent-box workflow internals: [docs/src/explanation/architecture/agent-box-workflow.md](docs/src/explanation/architecture/agent-box-workflow.md)
+- Agent-box CLI reference (generated): [docs/src/reference/agent-box/cli.md](docs/src/reference/agent-box/cli.md)
+- Portal CLI reference (generated): [docs/src/reference/portal/cli.md](docs/src/reference/portal/cli.md)
 
 ## Development
 
