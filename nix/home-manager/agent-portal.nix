@@ -14,17 +14,17 @@ in
       description = "Package providing the `agent-portal-host` binary.";
     };
 
-    wrappersPackage = lib.mkOption {
+    cliPackage = lib.mkOption {
       type = lib.types.package;
-      default = self.packages.${pkgs.system}.wrappers;
-      defaultText = lib.literalExpression "self.packages.${pkgs.system}.wrappers";
-      description = "Package providing wrapper binaries like `wl-paste`.";
+      default = self.packages.${pkgs.system}.cli;
+      defaultText = lib.literalExpression "self.packages.${pkgs.system}.cli";
+      description = "Package providing the `agent-portal-cli` binary.";
     };
 
-    installWrappers = lib.mkOption {
+    installCli = lib.mkOption {
       type = lib.types.bool;
       default = true;
-      description = "Whether to install wrapper binaries into home.packages.";
+      description = "Whether to install the `agent-portal-cli` binary into home.packages.";
     };
 
     debug = lib.mkOption {
@@ -48,7 +48,7 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    home.packages = lib.optionals cfg.installWrappers [ cfg.wrappersPackage ];
+    home.packages = lib.optionals cfg.installCli [ cfg.cliPackage ];
 
     systemd.user.services.agent-portal-host = {
       Unit = {

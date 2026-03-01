@@ -52,11 +52,27 @@
           OPENSSL_LIB_DIR = "${pkgs.openssl.out}/lib";
           OPENSSL_INCLUDE_DIR = "${pkgs.openssl.dev}/include";
         };
+
+        cli = pkgs.rustPlatform.buildRustPackage {
+          pname = "agent-portal-cli";
+          version = "0.1.0";
+          src = ./.;
+          cargoLock.lockFile = ./Cargo.lock;
+
+          cargoBuildFlags = [ "-p" "agent-portal" "--bin" "agent-portal-cli" ];
+          cargoTestFlags = [ "-p" "agent-portal" "--bin" "agent-portal-cli" ];
+          cargoInstallFlags = [ "-p" "agent-portal" "--bin" "agent-portal-cli" ];
+
+          OPENSSL_DIR = "${pkgs.openssl.dev}";
+          OPENSSL_LIB_DIR = "${pkgs.openssl.out}/lib";
+          OPENSSL_INCLUDE_DIR = "${pkgs.openssl.dev}/include";
+        };
       in
       {
         packages = {
           wrappers = wrappers;
           portal = portal;
+          cli = cli;
           mdbook-excalidraw = pkgs.mdbook-excalidraw;
           default = wrappers;
         };
