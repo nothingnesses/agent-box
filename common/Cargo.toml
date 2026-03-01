@@ -12,6 +12,8 @@ inquire.workspace = true
 jj-lib.workspace = true
 nix = { workspace = true, features = ["fs", "user", "socket"] }
 rmp-serde.workspace = true
+schemars = "1.2.1"
 serde.workspace = true
 shell-words.workspace = true
 walkdir.workspace = true
+serde_json.workspace = true

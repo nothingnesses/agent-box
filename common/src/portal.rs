@@ -1,3 +1,4 @@
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -39,7 +40,7 @@ fn default_rate_burst() -> u32 {
     10
 }
 
-#[derive(Debug, Deserialize, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum PolicyDecision {
     Allow,
@@ -51,7 +52,7 @@ fn default_clipboard_policy() -> PolicyDecision {
     PolicyDecision::Allow
 }
 
-#[derive(Debug, Deserialize, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum GhExecPolicyMode {
     #[serde(alias = "allow")]
@@ -67,7 +68,7 @@ fn default_gh_exec_policy() -> GhExecPolicyMode {
     GhExecPolicyMode::AskForWrites
 }
 
-#[derive(Debug, Deserialize, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq, Serialize, JsonSchema)]
 pub struct MethodPolicy {
     #[serde(default = "default_clipboard_policy")]
     pub clipboard_read_image: PolicyDecision,
@@ -84,7 +85,7 @@ impl Default for MethodPolicy {
     }
 }
 
-#[derive(Debug, Deserialize, Default, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Deserialize, Default, Clone, PartialEq, Eq, Serialize, JsonSchema)]
 pub struct PolicyConfig {
     #[serde(default)]
     pub defaults: MethodPolicy,
@@ -92,7 +93,7 @@ pub struct PolicyConfig {
     pub containers: HashMap<String, MethodPolicy>,
 }
 
-#[derive(Debug, Deserialize, Clone, PartialEq, Eq, Serialize, Default)]
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq, Serialize, Default, JsonSchema)]
 pub struct PortalTimeouts {
     #[serde(default)]
     pub request_ms: u64,
@@ -100,7 +101,7 @@ pub struct PortalTimeouts {
     pub prompt_ms: u64,
 }
 
-#[derive(Debug, Deserialize, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq, Serialize, JsonSchema)]
 pub struct PortalLimits {
     #[serde(default = "default_max_inflight")]
     pub max_inflight: usize,
@@ -126,7 +127,7 @@ impl Default for PortalLimits {
     }
 }
 
-#[derive(Debug, Deserialize, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq, Serialize, JsonSchema)]
 pub struct ClipboardConfig {
     #[serde(default = "default_allowed_mime")]
     pub allowed_mime: Vec<String>,
@@ -140,7 +141,7 @@ impl Default for ClipboardConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq, Serialize, JsonSchema)]
 pub struct PortalConfig {
     #[serde(default = "default_true")]
     pub enabled: bool,

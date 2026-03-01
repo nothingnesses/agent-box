@@ -3,6 +3,7 @@ use figment::{
     Figment,
     providers::{Format, Toml},
 };
+use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer};
 use std::fmt;
 use std::path::PathBuf;
@@ -436,7 +437,7 @@ impl fmt::Display for Mount {
     }
 }
 
-#[derive(Debug, Deserialize, Default, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Default, Clone, PartialEq, JsonSchema)]
 pub struct MountPaths {
     #[serde(default)]
     pub absolute: Vec<String>,
@@ -444,7 +445,7 @@ pub struct MountPaths {
     pub home_relative: Vec<String>,
 }
 
-#[derive(Debug, Deserialize, Default, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Default, Clone, PartialEq, JsonSchema)]
 pub struct MountsConfig {
     #[serde(default)]
     pub ro: MountPaths,
@@ -508,7 +509,7 @@ impl MountsConfig {
 
 /// A profile defines a named set of mounts, environment variables, and port mappings.
 /// Profiles can extend other profiles via the `extends` field.
-#[derive(Debug, Deserialize, Default, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Default, Clone, PartialEq, JsonSchema)]
 pub struct ProfileConfig {
     /// List of profile names this profile extends (inherits from)
     #[serde(default)]
@@ -551,7 +552,7 @@ fn default_context_path() -> String {
     "/tmp/context".to_string()
 }
 
-#[derive(Debug, Deserialize, Default, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Default, Clone, PartialEq, JsonSchema)]
 pub struct RuntimeConfig {
     #[serde(default = "default_backend")]
     pub backend: String,
@@ -576,7 +577,7 @@ pub struct RuntimeConfig {
     pub skip_mounts: Vec<String>,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, JsonSchema)]
 pub struct Config {
     pub workspace_dir: PathBuf,
     pub base_repo_dir: PathBuf,

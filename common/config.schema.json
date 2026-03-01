@@ -1,0 +1,407 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Config",
+  "type": "object",
+  "properties": {
+    "base_repo_dir": {
+      "type": "string"
+    },
+    "context": {
+      "description": "Root-level context",
+      "type": "string",
+      "default": ""
+    },
+    "context_path": {
+      "description": "Path where context file will be mounted inside the container",
+      "type": "string",
+      "default": "/tmp/context"
+    },
+    "default_profile": {
+      "description": "Default profile name to always apply (if set)",
+      "type": [
+        "string",
+        "null"
+      ],
+      "default": null
+    },
+    "portal": {
+      "description": "Host portal service configuration",
+      "$ref": "#/$defs/PortalConfig",
+      "default": {
+        "clipboard": {
+          "allowed_mime": [
+            "image/png",
+            "image/jpeg",
+            "image/webp"
+          ]
+        },
+        "enabled": true,
+        "limits": {
+          "max_clipboard_bytes": 20971520,
+          "max_inflight": 32,
+          "prompt_queue": 64,
+          "rate_burst": 10,
+          "rate_per_minute": 60
+        },
+        "policy": {
+          "containers": {},
+          "defaults": {
+            "clipboard_read_image": "allow",
+            "gh_exec": "ask_for_writes"
+          }
+        },
+        "prompt_command": null,
+        "socket_path": "/run/user/1000/agent-portal/portal.sock",
+        "timeouts": {
+          "prompt_ms": 0,
+          "request_ms": 0
+        }
+      }
+    },
+    "profiles": {
+      "description": "Named profiles that can be selected via CLI",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/ProfileConfig"
+      }
+    },
+    "runtime": {
+      "$ref": "#/$defs/RuntimeConfig"
+    },
+    "workspace_dir": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "workspace_dir",
+    "base_repo_dir"
+  ],
+  "$defs": {
+    "ClipboardConfig": {
+      "type": "object",
+      "properties": {
+        "allowed_mime": {
+          "type": "array",
+          "default": [
+            "image/png",
+            "image/jpeg",
+            "image/webp"
+          ],
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "GhExecPolicyMode": {
+      "type": "string",
+      "enum": [
+        "ask_for_none",
+        "ask_for_writes",
+        "ask_for_all",
+        "deny_all"
+      ]
+    },
+    "MethodPolicy": {
+      "type": "object",
+      "properties": {
+        "clipboard_read_image": {
+          "$ref": "#/$defs/PolicyDecision",
+          "default": "allow"
+        },
+        "gh_exec": {
+          "$ref": "#/$defs/GhExecPolicyMode",
+          "default": "ask_for_writes"
+        }
+      }
+    },
+    "MountPaths": {
+      "type": "object",
+      "properties": {
+        "absolute": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "home_relative": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "MountsConfig": {
+      "type": "object",
+      "properties": {
+        "o": {
+          "$ref": "#/$defs/MountPaths"
+        },
+        "ro": {
+          "$ref": "#/$defs/MountPaths"
+        },
+        "rw": {
+          "$ref": "#/$defs/MountPaths"
+        }
+      }
+    },
+    "PolicyConfig": {
+      "type": "object",
+      "properties": {
+        "containers": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/MethodPolicy"
+          },
+          "default": {}
+        },
+        "defaults": {
+          "$ref": "#/$defs/MethodPolicy",
+          "default": {
+            "clipboard_read_image": "allow",
+            "gh_exec": "ask_for_writes"
+          }
+        }
+      }
+    },
+    "PolicyDecision": {
+      "type": "string",
+      "enum": [
+        "allow",
+        "ask",
+        "deny"
+      ]
+    },
+    "PortalConfig": {
+      "type": "object",
+      "properties": {
+        "clipboard": {
+          "$ref": "#/$defs/ClipboardConfig",
+          "default": {
+            "allowed_mime": [
+              "image/png",
+              "image/jpeg",
+              "image/webp"
+            ]
+          }
+        },
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "limits": {
+          "$ref": "#/$defs/PortalLimits",
+          "default": {
+            "max_clipboard_bytes": 20971520,
+            "max_inflight": 32,
+            "prompt_queue": 64,
+            "rate_burst": 10,
+            "rate_per_minute": 60
+          }
+        },
+        "policy": {
+          "$ref": "#/$defs/PolicyConfig",
+          "default": {
+            "containers": {},
+            "defaults": {
+              "clipboard_read_image": "allow",
+              "gh_exec": "ask_for_writes"
+            }
+          }
+        },
+        "prompt_command": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "socket_path": {
+          "type": "string",
+          "default": "/run/user/1000/agent-portal/portal.sock"
+        },
+        "timeouts": {
+          "$ref": "#/$defs/PortalTimeouts",
+          "default": {
+            "prompt_ms": 0,
+            "request_ms": 0
+          }
+        }
+      }
+    },
+    "PortalLimits": {
+      "type": "object",
+      "properties": {
+        "max_clipboard_bytes": {
+          "type": "integer",
+          "format": "uint",
+          "default": 20971520,
+          "minimum": 0
+        },
+        "max_inflight": {
+          "type": "integer",
+          "format": "uint",
+          "default": 32,
+          "minimum": 0
+        },
+        "prompt_queue": {
+          "type": "integer",
+          "format": "uint",
+          "default": 64,
+          "minimum": 0
+        },
+        "rate_burst": {
+          "type": "integer",
+          "format": "uint32",
+          "default": 10,
+          "minimum": 0
+        },
+        "rate_per_minute": {
+          "type": "integer",
+          "format": "uint32",
+          "default": 60,
+          "minimum": 0
+        }
+      }
+    },
+    "PortalTimeouts": {
+      "type": "object",
+      "properties": {
+        "prompt_ms": {
+          "type": "integer",
+          "format": "uint64",
+          "default": 0,
+          "minimum": 0
+        },
+        "request_ms": {
+          "type": "integer",
+          "format": "uint64",
+          "default": 0,
+          "minimum": 0
+        }
+      }
+    },
+    "ProfileConfig": {
+      "description": "A profile defines a named set of mounts, environment variables, and port mappings.\nProfiles can extend other profiles via the `extends` field.",
+      "type": "object",
+      "properties": {
+        "context": {
+          "description": "Context for this profile",
+          "type": "string",
+          "default": ""
+        },
+        "env": {
+          "description": "Environment variables defined by this profile",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "env_passthrough": {
+          "description": "Environment variable names to pass through from host to container",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "extends": {
+          "description": "List of profile names this profile extends (inherits from)",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "hosts": {
+          "description": "Custom host-to-IP mappings for `/etc/hosts` inside the container (`HOST:IP`)",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "mounts": {
+          "description": "Mounts defined by this profile",
+          "$ref": "#/$defs/MountsConfig"
+        },
+        "ports": {
+          "description": "Port mappings defined by this profile (Docker `-p` syntax)",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "RuntimeConfig": {
+      "type": "object",
+      "properties": {
+        "backend": {
+          "type": "string",
+          "default": "podman"
+        },
+        "entrypoint": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "default": null,
+          "items": {
+            "type": "string"
+          }
+        },
+        "env": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "env_passthrough": {
+          "description": "Environment variable names to pass through from host to container",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "hosts": {
+          "description": "Custom host-to-IP mappings added to `/etc/hosts` inside the container (`HOST:IP`)",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "image": {
+          "type": "string",
+          "default": ""
+        },
+        "mounts": {
+          "$ref": "#/$defs/MountsConfig"
+        },
+        "ports": {
+          "description": "Port mappings to expose (Docker `-p` syntax: `[HOST_IP:]HOST_PORT:CONTAINER_PORT`)",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "skip_mounts": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
