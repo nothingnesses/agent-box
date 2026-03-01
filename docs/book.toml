@@ -10,6 +10,7 @@ build-dir = "book"
 
 [output.html]
 default-theme = "ayu"
+additional-css = ["theme/custom.css"]
 # additional-css = ["theme/custom.css", "theme/excalidraw.css"]
 # additional-js = ["mermaid.min.js", "mermaid-init.js", "theme/excalidraw.js"]
 
