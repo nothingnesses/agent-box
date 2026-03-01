@@ -44,9 +44,9 @@
           src = ./.;
           cargoLock.lockFile = ./Cargo.lock;
 
-          cargoBuildFlags = [ "-p" "agent-portal" ];
-          cargoTestFlags = [ "-p" "agent-portal" ];
-          cargoInstallFlags = [ "-p" "agent-portal" ];
+          cargoBuildFlags = [ "-p" "agent-portal" "--bin" "agent-portal-host" ];
+          cargoTestFlags = [ "-p" "agent-portal" "--bin" "agent-portal-host" ];
+          cargoInstallFlags = [ "-p" "agent-portal" "--bin" "agent-portal-host" ];
 
           OPENSSL_DIR = "${pkgs.openssl.dev}";
           OPENSSL_LIB_DIR = "${pkgs.openssl.out}/lib";
