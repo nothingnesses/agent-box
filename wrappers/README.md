@@ -5,7 +5,6 @@ Compatibility wrapper binaries that make portal-backed host access transparent t
 ## Binaries
 
 - `wl-paste`: wrapper compatible with image clipboard flow
-- `agent-portal-client`: small helper CLI for scripts/wrappers
 - `gh`: transparent guest wrapper that forwards command execution to portal method `gh.exec`
 - `portal/scripts/gh-policy-gen.py`: optional report generator for `gh` leaf command read/write classification
 
@@ -19,7 +18,6 @@ From repo root:
 
 ```bash
 cargo run -p agent-wrappers --bin wl-paste -- --help
-cargo run -p agent-wrappers --bin agent-portal-client -- --help
 nix-shell -p gh python3 --run 'python3 portal/scripts/gh-policy-gen.py'
 cargo run -p agent-wrappers --bin gh -- --version
 cargo test -p agent-wrappers

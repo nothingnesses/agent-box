@@ -8,10 +8,6 @@ name = "wl-paste"
 path = "src/bin/wl-paste.rs"
 
 [[bin]]
-name = "agent-portal-client"
-path = "src/bin/agent-portal-client.rs"
-
-[[bin]]
 name = "gh"
 path = "src/bin/gh.rs"
 

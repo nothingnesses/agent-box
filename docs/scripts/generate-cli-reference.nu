@@ -67,7 +67,6 @@ let ab_specs = [
 let portal_specs = [
   { name: "agent-portal-host", cmd: "cargo run -q -p agent-portal --bin agent-portal-host -- --help" }
   { name: "agent-portal-cli", cmd: "cargo run -q -p agent-portal --bin agent-portal-cli -- --help" }
-  { name: "agent-portal-client", cmd: "cargo run -q -p agent-wrappers --bin agent-portal-client -- --help" }
   { name: "wl-paste wrapper", cmd: "cargo run -q -p agent-wrappers --bin wl-paste -- --help" }
 ]
 

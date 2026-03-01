@@ -21,7 +21,6 @@ Implementation structure:
 
 - New top-level `wrappers/` crate for compatibility binaries.
 - Shared Rust portal client API in `common` (`portal_client`) for direct Rust consumers.
-- A generic helper CLI in wrappers (`agent-portal-client`) for scripts and debugging.
 
 ## Scope (MVP)
 
