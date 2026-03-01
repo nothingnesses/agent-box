@@ -437,7 +437,7 @@ fn prompt_allow(state: &AppState, identity: &CallerIdentity, reason: Option<&str
             identity.pid,
             reason.unwrap_or("(none)")
         );
-        let menu = format!("allow-once ({context})\nallow-session ({context})\ndeny ({context})\n");
+        let menu = format!("allow-once ({context})\ndeny ({context})\n");
         stdin
             .write_all(menu.as_bytes())
             .wrap_err("failed writing prompt choices")?;
