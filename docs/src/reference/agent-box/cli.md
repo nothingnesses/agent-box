@@ -74,8 +74,8 @@ Usage: ab spawn [OPTIONS]
 
 Options:
   -s, --session <SESSION>        Session name (mutually exclusive with --local)
-  -l, --local                    Use current directory as both source and workspace (mutually exclusive with --session)
-  -r, --repo <REPO>              Repository identifier (defaults to current directory's git repo)
+  -l, --local                    Use the enclosing git root, or current directory if not in a git repo (mutually exclusive with --session)
+  -r, --repo <REPO>              Repository identifier (ignored when --local is used)
   -e, --entrypoint <ENTRYPOINT>  Override entrypoint from config
   -c, --command <COMMAND>        Command to run in the container (passed to entrypoint)
       --git                      

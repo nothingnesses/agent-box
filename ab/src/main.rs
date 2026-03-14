@@ -47,10 +47,10 @@ enum Commands {
             required_unless_present = "local"
         )]
         session: Option<String>,
-        /// Use current directory as both source and workspace (mutually exclusive with --session)
+        /// Use the enclosing git root, or current directory if not in a git repo (mutually exclusive with --session)
         #[arg(long, short, conflicts_with = "session")]
         local: bool,
-        /// Repository identifier (defaults to current directory's git repo)
+        /// Repository identifier (ignored when --local is used)
         #[arg(long, short)]
         repo: Option<String>,
         /// Override entrypoint from config
@@ -223,16 +223,11 @@ fn run() -> eyre::Result<()> {
 
             // Build container configuration
             let (workspace_path, source_path) = if local {
-                // In local mode, use current directory (git root) directly
-                // No need to check if it's in base_repo_dir since we're not creating a workspace
-                let path = if let Some(repo_name) = repo.as_deref() {
-                    // If repo is explicitly provided, still try to locate it
-                    let repo_id = locate_repo(&config, Some(repo_name))?;
-                    repo_id.source_path(&config)
-                } else {
-                    // Use git root from current directory
-                    agent_box_common::repo::find_git_root()?
-                };
+                // In local mode, prefer the enclosing git root if one exists.
+                // Otherwise, use the current directory directly.
+                // No base_repo_dir lookup is required.
+                let cwd = std::env::current_dir()?;
+                let path = agent_box_common::repo::find_git_root().unwrap_or(cwd);
                 (path.clone(), path)
             } else {
                 // In session mode, we need a valid repo_id in base_repo_dir
