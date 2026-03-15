@@ -32,7 +32,8 @@ This page describes behavior expected from compatibility wrappers in `wrappers/`
 ## Host-side execution model
 
 - Policy decisions and prompts are enforced by `agent-portal-host`.
-- Host service resolves host-native binaries (`gh`, `wl-paste`) to avoid wrapper recursion.
+- Host service resolves the host-native `gh` binary to avoid wrapper recursion.
+- Clipboard reads are handled directly in-process via the Wayland clipboard crate.
 
 ## Versioning
 

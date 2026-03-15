@@ -8,7 +8,7 @@ use rmp_serde::{from_read, to_vec_named};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
@@ -18,6 +18,9 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tracing::{debug, info, warn};
+use wl_clipboard_rs::paste::{
+    ClipboardType, MimeType as ClipboardMimeType, Seat, get_contents, get_mime_types_ordered,
+};
 
 #[derive(Debug, Clone)]
 struct CallerIdentity {
@@ -743,43 +746,9 @@ fn classify_gh_operation(policy: &GhPolicyData, argv: &[String]) -> GhCommandOpe
         .unwrap_or(GhCommandOperation::Unknown)
 }
 
-fn resolve_host_wl_paste_binary() -> String {
-    if let Ok(bin) = std::env::var("AGENT_PORTAL_HOST_WL_PASTE")
-        && !bin.trim().is_empty()
-    {
-        return bin;
-    }
-
-    for candidate in ["/run/current-system/sw/bin/wl-paste", "/usr/bin/wl-paste"] {
-        if Path::new(candidate).exists() {
-            return candidate.to_string();
-        }
-    }
-
-    "wl-paste".to_string()
-}
-
 fn clipboard_read_image(allowed_mime: &[String], max_bytes: usize) -> Result<(String, Vec<u8>)> {
-    let wl_paste_bin = resolve_host_wl_paste_binary();
-    debug!(binary = %wl_paste_bin, "using wl-paste binary");
-
-    let types_out = Command::new(&wl_paste_bin)
-        .arg("--list-types")
-        .output()
-        .wrap_err_with(|| format!("failed to run {} --list-types", wl_paste_bin))?;
-
-    if !types_out.status.success() {
-        return Err(eyre::eyre!(
-            "wl-paste --list-types failed: {}",
-            String::from_utf8_lossy(&types_out.stderr)
-        ));
-    }
-
-    let offered: Vec<String> = String::from_utf8_lossy(&types_out.stdout)
-        .lines()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
+    let offered = get_mime_types_ordered(ClipboardType::Regular, Seat::Unspecified)
+        .wrap_err("failed to query Wayland clipboard MIME types")?;
 
     let mime = allowed_mime
         .iter()
@@ -788,28 +757,28 @@ fn clipboard_read_image(allowed_mime: &[String], max_bytes: usize) -> Result<(St
         .ok_or_else(|| eyre::eyre!("clipboard does not currently contain an allowed image MIME"))?;
     debug!(mime = %mime, "selected clipboard mime");
 
-    let out = Command::new(&wl_paste_bin)
-        .args(["--no-newline", "--type", &mime])
-        .output()
-        .wrap_err_with(|| format!("failed to run {} for image bytes", wl_paste_bin))?;
+    let (pipe, actual_mime) = get_contents(
+        ClipboardType::Regular,
+        Seat::Unspecified,
+        ClipboardMimeType::Specific(&mime),
+    )
+    .wrap_err_with(|| format!("failed to read Wayland clipboard contents for mime {mime}"))?;
 
-    if !out.status.success() {
-        return Err(eyre::eyre!(
-            "wl-paste failed for mime {}: {}",
-            mime,
-            String::from_utf8_lossy(&out.stderr)
-        ));
-    }
+    let mut bytes = Vec::new();
+    let mut limited = pipe.take(max_bytes as u64 + 1);
+    limited
+        .read_to_end(&mut bytes)
+        .wrap_err("failed to read clipboard image bytes")?;
 
-    if out.stdout.len() > max_bytes {
+    if bytes.len() > max_bytes {
         return Err(eyre::eyre!(
             "clipboard image exceeds size limit ({} > {})",
-            out.stdout.len(),
+            bytes.len(),
             max_bytes
         ));
     }
 
-    debug!(bytes = out.stdout.len(), mime = %mime, "clipboard image request accepted");
+    debug!(bytes = bytes.len(), mime = %actual_mime, "clipboard image request accepted");
 
-    Ok((mime, out.stdout))
+    Ok((actual_mime, bytes))
 }

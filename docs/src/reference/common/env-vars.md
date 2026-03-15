@@ -6,9 +6,6 @@
   - Used by portal clients/wrappers to select socket path.
   - Resolution priority is env var first, then config/default.
 
-- `AGENT_PORTAL_HOST_WL_PASTE`
-  - Used by `agent-portal-host` to override host `wl-paste` binary path.
-
 - `AGENT_PORTAL_HOST_GH`
   - Used by `agent-portal-host` to override host `gh` binary path.
 

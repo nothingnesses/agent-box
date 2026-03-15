@@ -12,7 +12,7 @@ This section explains the security posture of using Portal and Agent-box togethe
 
 - **Container**: untrusted or semi-trusted agent execution context.
 - **Portal host**: trusted broker enforcing method policy.
-- **Host binaries** (`gh`, `wl-paste`): executed only by host broker.
+- **Host integrations**: `gh` is executed by the host broker, while clipboard reads are handled directly by the host process via the Wayland clipboard crate.
 
 ## Control mechanisms
 

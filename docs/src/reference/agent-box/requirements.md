@@ -9,7 +9,7 @@
 
 ## Portal-related requirements
 
-- `wl-paste` available on host when using portal clipboard methods
+- Wayland clipboard access available on host when using portal clipboard methods
 - `agent-portal-host` running for wrapper/API operations
 
 ## Optional tooling

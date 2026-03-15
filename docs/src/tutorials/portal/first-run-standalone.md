@@ -8,7 +8,7 @@ You run `agent-portal-host` and send successful requests with `agent-portal-cli`
 
 - `agent-portal-host` and `agent-portal-cli` installed
 - `~/.agent-box.toml` with `[portal]` enabled
-- `wl-paste` available on host if testing clipboard method
+- Wayland clipboard access available on host if testing clipboard method
 
 ## Minimal config
 

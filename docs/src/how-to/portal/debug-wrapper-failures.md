@@ -34,7 +34,7 @@ Find and fix common failures for `wl-paste`/`gh` wrappers and other Portal clien
 - **prompt_failed**
   - `prompt_command` missing or exits non-zero in ask-mode
 - **clipboard_failed**
-  - no allowed image MIME currently in clipboard or host `wl-paste` issue
+  - no allowed image MIME currently in clipboard or a host Wayland clipboard access issue
 - **gh_exec_failed**
   - host `gh` unavailable or command failure
 

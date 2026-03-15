@@ -14,6 +14,10 @@ Portal crate containing host service and official CLI for container-to-host medi
 - `clipboard.read_image`
 - `gh.exec`
 
+`clipboard.read_image` is implemented directly against the Wayland clipboard via
+[`wl-clipboard-rs`](https://github.com/YaLTeR/wl-clipboard-rs), rather than shelling out to
+`wl-paste`.
+
 `gh.exec` classification uses an embedded-at-compile-time command policy generated at repo root
 via `portal/scripts/gh-policy-gen.py`:
 `portal/gh-leaf-command-read-write-report.json`.

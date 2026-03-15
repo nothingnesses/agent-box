@@ -38,13 +38,6 @@ in
       default = null;
       description = "Optional socket path override passed as `--socket` to agent-portal-host.";
     };
-
-    wlPasteBinary = lib.mkOption {
-      type = lib.types.str;
-      default = "${pkgs.wl-clipboard}/bin/wl-paste";
-      defaultText = lib.literalExpression ''"${pkgs.wl-clipboard}/bin/wl-paste"'';
-      description = "Host wl-paste binary used by portal host to avoid wrapper recursion.";
-    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -59,9 +52,7 @@ in
 
       Service = {
         Type = "simple";
-        Environment = [
-          "AGENT_PORTAL_HOST_WL_PASTE=${cfg.wlPasteBinary}"
-        ] ++ lib.optionals cfg.debug [
+        Environment = lib.optionals cfg.debug [
           "RUST_LOG=debug"
         ];
         ExecStart =
