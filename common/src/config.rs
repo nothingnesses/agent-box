@@ -995,6 +995,7 @@ pub fn validate_config_or_err(config: &Config) -> Result<()> {
 }
 
 #[cfg(test)]
+#[allow(clippy::result_large_err)]
 mod tests {
     use super::*;
     use figment::Jail;

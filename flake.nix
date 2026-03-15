@@ -4,12 +4,19 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    rust-overlay.url = "github:oxalica/rust-overlay";
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
+  outputs = { self, nixpkgs, flake-utils, rust-overlay }:
     (flake-utils.lib.eachDefaultSystem (system:
       let
-        pkgs = nixpkgs.legacyPackages.${system};
+        pkgs = import nixpkgs {
+          inherit system;
+          overlays = [ (import rust-overlay) ];
+        };
+        rustToolchain = pkgs.rust-bin.stable.latest.default.override {
+          extensions = [ "rustfmt" "clippy" ];
+        };
         mdbook-excalidraw = pkgs.rustPlatform.buildRustPackage rec {
           pname = "mdbook-excalidraw";
           version = "0.1.0";
@@ -91,11 +98,8 @@
 
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
-            # Rust toolchain
-            cargo
-            rustc
-            rustfmt
-            clippy
+            # Rust toolchain (match CI's stable channel)
+            rustToolchain
 
             # Build dependencies
             pkg-config
