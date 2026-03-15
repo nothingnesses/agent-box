@@ -21,7 +21,9 @@ This page explains the runtime flow behind `ab new` and `ab spawn`.
 3. Resolve profile graph (`default_profile` + CLI profiles).
 4. Build runtime-specific container configuration.
 5. Apply mounts/env/ports/hosts/network options.
-6. Mount portal socket and set `AGENT_PORTAL_SOCKET` when portal is enabled.
+6. If portal is enabled:
+   - `portal.global = true`: mount configured portal socket and set `AGENT_PORTAL_SOCKET`.
+   - `portal.global = false`: start a per-container in-process portal host, mount its socket, and set `AGENT_PORTAL_SOCKET`.
 7. Execute selected runtime backend (Podman or Docker).
 
 ## Path resolution notes

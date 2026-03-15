@@ -213,6 +213,7 @@ pub fn build_container_config(
     cli_mounts: &[Mount],
     cli_ports: &[String],
     cli_hosts: &[String],
+    portal_socket_override: Option<&Path>,
     command: Option<Vec<String>>,
     should_skip: bool,
     network: Option<String>,
@@ -309,15 +310,22 @@ pub fn build_container_config(
 
     // Mount portal socket into container (if enabled and socket exists)
     if config.portal.enabled {
-        let socket_path = std::path::PathBuf::from(&config.portal.socket_path);
-        if socket_path.exists() {
-            binds.push(format_bind(&socket_path, &socket_path, MountMode::Rw));
-            env.push(format!("AGENT_PORTAL_SOCKET={}", socket_path.display()));
+        let socket_path = if config.portal.global {
+            Some(std::path::PathBuf::from(&config.portal.socket_path))
         } else {
-            eprintln!(
-                "WARNING: portal is enabled but socket does not exist yet: {}",
-                socket_path.display()
-            );
+            portal_socket_override.map(std::path::PathBuf::from)
+        };
+
+        if let Some(socket_path) = socket_path {
+            if socket_path.exists() {
+                binds.push(format_bind(&socket_path, &socket_path, MountMode::Rw));
+                env.push(format!("AGENT_PORTAL_SOCKET={}", socket_path.display()));
+            } else {
+                eprintln!(
+                    "WARNING: portal is enabled but socket does not exist yet: {}",
+                    socket_path.display()
+                );
+            }
         }
     }
 
@@ -1363,6 +1371,7 @@ mod tests {
             &[],
             &[],
             None,
+            None,
             true,
             None,
         )
@@ -1452,6 +1461,7 @@ mod tests {
             &[],
             &[],
             None,
+            None,
             true,
             None,
         )
@@ -1527,6 +1537,7 @@ mod tests {
             &[],
             &[],
             None,
+            None,
             true,
             None,
         )
@@ -1559,6 +1570,150 @@ mod tests {
         let parts: Vec<&str> = context_mount.split(':').collect();
         let host_path = parts[0];
         let _ = fs::remove_file(host_path);
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_managed_portal_uses_override_socket() {
+        use agent_box_common::config::{Config, ResolvedProfile, RuntimeConfig};
+        use std::collections::HashMap;
+        use std::fs;
+        use std::path::PathBuf;
+
+        let temp_dir =
+            std::env::temp_dir().join(format!("ab_managed_portal_{}", std::process::id()));
+        let workspace_path = temp_dir.join("workspace");
+        let socket_path = temp_dir.join("portal.sock");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&workspace_path).unwrap();
+        fs::write(&socket_path, b"").unwrap();
+
+        let portal = agent_box_common::portal::PortalConfig {
+            global: false,
+            socket_path: "/run/user/1000/agent-portal/portal.sock".to_string(),
+            ..Default::default()
+        };
+
+        let config = Config {
+            workspace_dir: PathBuf::from("/workspaces"),
+            base_repo_dir: PathBuf::from("/repos"),
+            default_profile: None,
+            profiles: HashMap::new(),
+            runtime: RuntimeConfig {
+                backend: "podman".to_string(),
+                image: "test:latest".to_string(),
+                entrypoint: None,
+                mounts: Default::default(),
+                env: vec![],
+                env_passthrough: vec![],
+                ports: vec![],
+                hosts: vec![],
+                skip_mounts: vec![],
+            },
+            context: String::new(),
+            context_path: "/tmp/context".to_string(),
+            portal,
+        };
+
+        let resolved_profile = ResolvedProfile::default();
+        let container_config = build_container_config(
+            &config,
+            &workspace_path,
+            &workspace_path,
+            true,
+            false,
+            None,
+            &resolved_profile,
+            &[],
+            &[],
+            &[],
+            Some(socket_path.as_path()),
+            None,
+            true,
+            None,
+        )
+        .unwrap();
+
+        assert!(
+            container_config
+                .env
+                .iter()
+                .any(|v| v == &format!("AGENT_PORTAL_SOCKET={}", socket_path.display()))
+        );
+        assert!(
+            container_config.mounts.iter().any(|m| {
+                m == &format!("{}:{}:rw", socket_path.display(), socket_path.display())
+            })
+        );
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_managed_portal_without_override_does_not_mount_socket() {
+        use agent_box_common::config::{Config, ResolvedProfile, RuntimeConfig};
+        use std::collections::HashMap;
+        use std::fs;
+        use std::path::PathBuf;
+
+        let temp_dir =
+            std::env::temp_dir().join(format!("ab_managed_portal_none_{}", std::process::id()));
+        let workspace_path = temp_dir.join("workspace");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&workspace_path).unwrap();
+
+        let portal = agent_box_common::portal::PortalConfig {
+            global: false,
+            ..Default::default()
+        };
+
+        let config = Config {
+            workspace_dir: PathBuf::from("/workspaces"),
+            base_repo_dir: PathBuf::from("/repos"),
+            default_profile: None,
+            profiles: HashMap::new(),
+            runtime: RuntimeConfig {
+                backend: "podman".to_string(),
+                image: "test:latest".to_string(),
+                entrypoint: None,
+                mounts: Default::default(),
+                env: vec![],
+                env_passthrough: vec![],
+                ports: vec![],
+                hosts: vec![],
+                skip_mounts: vec![],
+            },
+            context: String::new(),
+            context_path: "/tmp/context".to_string(),
+            portal,
+        };
+
+        let resolved_profile = ResolvedProfile::default();
+        let container_config = build_container_config(
+            &config,
+            &workspace_path,
+            &workspace_path,
+            true,
+            false,
+            None,
+            &resolved_profile,
+            &[],
+            &[],
+            &[],
+            None,
+            None,
+            true,
+            None,
+        )
+        .unwrap();
+
+        assert!(
+            !container_config
+                .env
+                .iter()
+                .any(|v| v.starts_with("AGENT_PORTAL_SOCKET="))
+        );
+
         let _ = fs::remove_dir_all(&temp_dir);
     }
 }

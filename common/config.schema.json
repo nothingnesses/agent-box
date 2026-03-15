@@ -36,6 +36,7 @@
           ]
         },
         "enabled": true,
+        "global": false,
         "limits": {
           "max_clipboard_bytes": 20971520,
           "max_inflight": 32,
@@ -191,6 +192,10 @@
         "enabled": {
           "type": "boolean",
           "default": true
+        },
+        "global": {
+          "type": "boolean",
+          "default": false
         },
         "limits": {
           "$ref": "#/$defs/PortalLimits",

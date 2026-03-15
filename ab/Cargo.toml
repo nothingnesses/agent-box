@@ -9,6 +9,7 @@ path = "src/main.rs"
 
 [dependencies]
 agent-box-common.workspace = true
+agent-portal = { path = "../portal" }
 clap.workspace = true
 eyre.workspace = true
 glob.workspace = true

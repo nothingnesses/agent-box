@@ -6,10 +6,40 @@ use agent_box_common::display::info;
 use agent_box_common::path::WorkspaceType;
 use agent_box_common::repo::{locate_repo, new_workspace, remove_repo, resolve_repo_id};
 use clap::{Parser, Subcommand};
+use eyre::Result;
+use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 mod runtime;
 
 use runtime::{build_container_config, create_runtime};
+
+type ManagedPortal = agent_portal::host::ManagedPortalHandle;
+
+fn per_container_portal_socket_path() -> PathBuf {
+    let base = std::env::var_os("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| std::env::temp_dir().join("agent-portal"));
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    base.join("agent-box")
+        .join(format!("portal-{}-{stamp}.sock", std::process::id()))
+}
+
+fn maybe_start_managed_portal(
+    config: &agent_box_common::config::Config,
+) -> Result<Option<ManagedPortal>> {
+    if !config.portal.enabled || config.portal.global {
+        return Ok(None);
+    }
+
+    Ok(Some(agent_portal::host::spawn_managed(
+        config.portal.clone(),
+        per_container_portal_socket_path(),
+    )?))
+}
 
 #[derive(Parser)]
 #[command(name = "ab")]
@@ -256,6 +286,9 @@ fn run() -> eyre::Result<()> {
             // Parse CLI mount arguments
             let cli_mounts = runtime::parse_cli_mounts(&mount, &mount_abs)?;
 
+            let managed_portal = maybe_start_managed_portal(&config)?;
+            let portal_socket_override = managed_portal.as_ref().map(|p| p.socket_path());
+
             let container_config = match build_container_config(
                 &config,
                 &workspace_path,
@@ -267,6 +300,7 @@ fn run() -> eyre::Result<()> {
                 &cli_mounts,
                 &port,
                 &add_host,
+                portal_socket_override,
                 command,
                 !no_skip,
                 network,

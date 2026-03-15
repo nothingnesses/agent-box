@@ -6,19 +6,37 @@ Make image paste work transparently in `pi` sessions using portal-backed `wl-pas
 
 ## Requirements
 
-1. `agent-portal-host` running on host
-2. Portal enabled in `~/.agent-box.toml`
+1. Portal enabled in `~/.agent-box.toml`
+2. If `[portal].global = true`, `agent-portal-host` running on host
 3. Wrapper binary (`wl-paste`) available in container PATH before system `wl-paste`
 
 ## Steps
 
-1. Start portal host:
+1. Choose a Portal mode:
+
+Global mode:
+
+```toml
+[portal]
+enabled = true
+global = true
+```
+
+Managed per-container mode:
+
+```toml
+[portal]
+enabled = true
+global = false
+```
+
+2. If using global mode, start portal host:
 
 ```bash
 agent-portal-host
 ```
 
-2. Spawn with Agent-box (portal enabled):
+3. Spawn with Agent-box (portal enabled):
 
 ```bash
 ab spawn -s my-session

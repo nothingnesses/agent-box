@@ -7,9 +7,11 @@ Find and fix common failures for `wl-paste`/`gh` wrappers and other Portal clien
 ## Quick checklist
 
 1. Is host service running?
-   ```bash
-   pgrep -a agent-portal-host
-   ```
+   - If `[portal].global = true`:
+     ```bash
+     pgrep -a agent-portal-host
+     ```
+   - If `[portal].global = false`, `ab spawn` should start one automatically for that session.
 2. Can you ping the socket directly?
    ```bash
    agent-portal-cli ping

@@ -12,6 +12,10 @@ fn default_socket_path() -> String {
     format!("/run/user/{uid}/agent-portal/portal.sock")
 }
 
+fn default_global() -> bool {
+    false
+}
+
 fn default_allowed_mime() -> Vec<String> {
     vec![
         "image/png".to_string(),
@@ -145,6 +149,8 @@ impl Default for ClipboardConfig {
 pub struct PortalConfig {
     #[serde(default = "default_true")]
     pub enabled: bool,
+    #[serde(default = "default_global")]
+    pub global: bool,
     #[serde(default = "default_socket_path")]
     pub socket_path: String,
     #[serde(default)]
@@ -163,6 +169,7 @@ impl Default for PortalConfig {
     fn default() -> Self {
         Self {
             enabled: true,
+            global: default_global(),
             socket_path: default_socket_path(),
             prompt_command: None,
             timeouts: PortalTimeouts::default(),
@@ -354,6 +361,7 @@ mod tests {
     fn default_portal_config_is_sane() {
         let cfg = PortalConfig::default();
         assert!(cfg.enabled);
+        assert!(!cfg.global);
         assert!(cfg.socket_path.contains("agent-portal/portal.sock"));
         assert_eq!(cfg.limits.max_inflight, 32);
         assert_eq!(cfg.limits.prompt_queue, 64);
