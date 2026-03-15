@@ -24,7 +24,7 @@ Add `rapidhash = "4.4"` to workspace dependencies in the root `Cargo.toml` and t
 
 **Add `workspace_slug()` function**: Computes a content-addressable slug from an absolute repo path: the full 16 hex characters of the `rapidhash` `u64` hash of the canonical path string. For example, `/home/user/repos/my-project` → `a1b2c3d4e5f6a7b8`. 16 hex chars = 64 bits, giving a birthday-bound collision probability of ~50% at ~4 billion repos. The sentinel file (below) catches any collision that does occur.
 
-The slug contains no human-readable component. The `.source-repo` sentinel file provides the mapping from slug to repo path. `ab info` and `ab dbg orphans` display the human-readable repo name via `name()`.
+The slug contains no human-readable component. A name+hash hybrid (e.g., `my-project-a1b2c3d4`) was considered but rejected: repo directory names can contain non-UTF-8 bytes, characters invalid in filesystem paths on other platforms, or sequences that complicate slug parsing (e.g., embedded hyphens conflicting with the name-hash separator). Keeping the slug as pure hex avoids all sanitization and canonicalization edge cases — the sentinel file and `name()` provide human readability where needed. `ab info` and `ab dbg orphans` display the human-readable repo name via `name()`.
 
 **Note on rapidhash stability:** The rapidhash algorithm has a fixed specification, so output should be stable across crate versions. The sentinel-verified fallback (below) provides self-healing if this assumption is ever violated.
 
@@ -48,6 +48,7 @@ The cost of sentinel-verified lookup is one `fs::read_to_string` per spawn (a fe
 - `from_repo_path(config, full_path)` -> `from_path(full_path)`: canonicalize and store. No config needed. This is the single canonicalization point — callers must not pre-canonicalize.
 - `source_path(&self, config)` -> `source_path(&self)`: returns `&self.repo_path`. No config needed.
 - `relative_path()` -> `name()`: returns `repo_path.file_name()` as `&str` via `to_str()`. If `file_name()` returns `None` (e.g., path is `/`), return an error — `/` is never a valid repo root, and `gix::discover()` would fail before reaching this point anyway. If `to_str()` returns `None` (non-UTF-8 directory name), return an error with a descriptive message including the lossy representation of the path — non-UTF-8 repo directory names are pathological on systems where this tool runs.
+- **Display convention:** All user-facing messages that identify a repo should include the full canonical path from `source_path()` — e.g., `'/home/user/repos/my-project'`. `name()` is only used where a short label is needed alongside the full path (e.g., the `ab info` header). Never use `name()` alone in error messages, since repos can share a basename (e.g., `/work/project` vs `/personal/project`).
 - `git_workspace_path`: use `workspace_slug()` (content-addressable 16-hex-char hash) instead of `self.relative_path` in path construction. Still needs config for `workspace_dir`. Verify via sentinel (see below).
 - `jj_workspace_path`: same.
 - `workspace_path`: delegates to `git_workspace_path`/`jj_workspace_path` — no signature change needed beyond what those two require.
@@ -98,13 +99,22 @@ This requires a new `find_git_root_from(path: &Path)` helper (or generalizing `f
 
 **`create_jj_workspace()`** (line 131-174): Same pattern (including atomic sentinel file write with trailing `\n`).
 
-**`remove_repo()`** (line 266-318): Use `resolve_workspace_dir()` to find the actual workspace directory for each type (git/jj), handling mismatched slugs from migration. Display `repo_id.name()` instead of `repo_id.relative_path().display()`.
+**`remove_repo()`** (line 266-318): Use `resolve_workspace_dir()` to find the actual workspace directory for each type (git/jj), handling mismatched slugs from migration. Display `repo_id.source_path()` instead of `repo_id.relative_path().display()` (full canonical path in all user-facing output).
 
 **Integration test:** Add an automated test for the full `new_workspace` → `resolve_workspace_dir` round-trip. Create a temp directory with a real git repo (`git init`), call `new_workspace` to create a workspace with the new content-addressable slug layout, then verify: (1) slug directory exists with a 16-hex-char name, (2) `.source-repo` sentinel file contains the correct canonical path (with trailing newline), (3) `resolve_workspace_dir` finds the workspace via the fast path (slug match). Add a second test for the rename-on-find path: create a workspace dir with a fake slug and valid `.source-repo`, then call `new_workspace` and verify the old slug dir is renamed to the current hash.
 
 ### 3. `common/src/display.rs` -- Update info command
 
-**Fix worktree resolution:** The current code uses `gix::discover(&cwd)` followed by `workdir()`, which returns the *linked worktree* directory when run from inside a session workspace — not the source repo. Fix this by resolving to the main repository: use `gix::Repository::common_dir()` (or equivalent) to find the shared `.git` directory, then derive the main worktree path from it. This ensures `ab info` shows correct results regardless of whether the user is in the source repo or a session workspace.
+**Fix worktree resolution:** The current code uses `gix::discover(&cwd)` followed by `workdir()`, which returns the *linked worktree* directory when run from inside a session workspace — not the source repo. Fix this by resolving to the main repository: use `gix::Repository::common_dir()` to find the shared `.git` directory, then derive the main worktree path from its parent:
+```rust
+let repo = gix::discover(&cwd)?;
+let common = repo.common_dir();
+// common_dir() returns the shared .git dir (e.g., /home/user/my-project/.git)
+// Its parent is the main repo root.
+let main_repo_root = common.parent()
+    .ok_or_else(|| eyre::eyre!("common_dir has no parent: {}", common.display()))?;
+```
+This ensures `ab info` shows correct results regardless of whether the user is in the source repo or a session workspace. Add a test that runs `ab info` logic from inside a linked worktree path and verifies it resolves to the main repo.
 
 Line 29: `RepoIdentifier::from_repo_path(config, &repo_path)` -> `RepoIdentifier::from_path(&repo_path)` (using the resolved main repo path).
 Line 33: `repo_id.git_worktrees(config)` -> `repo_id.git_worktrees()`.
@@ -120,7 +130,12 @@ Use `repo_id.name()` and `repo_id.source_path()` to populate this.
 
 ### 4. `ab/src/main.rs` -- CLI changes
 
-**`Commands::New`** (line 27-39): Change `repo_name: Option<String>` to `repo_path: Option<PathBuf>` (positional arg is now a filesystem path, not a search string). Call `new_workspace(&config, repo_path.as_deref(), session.as_deref(), workspace_type)`.
+**`Commands::New`** (line 27-39): Change `repo_name: Option<String>` to `repo_path: Option<PathBuf>` (positional arg is now a filesystem path, not a search string). Call `new_workspace(&config, repo_path.as_deref(), session.as_deref(), workspace_type)`. When `gix::discover()` fails for a provided path, check if the argument looks like a bare name (no path separator, doesn't exist as a path). If so, add a hint to the error:
+```
+Error: could not find a git repository at 'my-project'
+Hint: repo name search was removed. Use 'cd my-project && ab new' or 'ab new /path/to/my-project' instead.
+```
+This catches users with muscle memory for the old `ab new <name>` behavior.
 
 **`Commands::Spawn`** (line 54-55): Change `--repo` from `Option<String>` to `Option<PathBuf>` (a filesystem path).
 
@@ -128,9 +143,9 @@ Use `repo_id.name()` and `repo_id.source_path()` to populate this.
 
 **`Commands::Spawn` session mode** (line 237-253): Pass `repo.as_deref()` as `Option<&Path>` to `resolve_repo_id()` and `new_workspace()`. When `resolve_workspace_dir()` returns `None` (workspace not found), before erroring, scan sentinels for orphaned workspaces whose source path shares the same `file_name()` as the current repo. If any are found, include them in the error message as a hint:
 ```
-Error: no workspace found for 'my-project' (/home/user/repos/my-project-v2)
+Error: no workspace found for '/home/user/repos/my-project-v2'
 Note: found orphaned workspace for '/home/user/repos/my-project' — same repo?
-  Run 'ab dbg orphans' to inspect, or manually update
+  Run 'ab dbg orphans a1b2c3d4e5f6a7b8' to inspect, or manually update
   .source-repo in ~/.agent-box/workspaces/git/a1b2c3d4e5f6a7b8/
 ```
 This catches the common case of a repo being moved or renamed.
@@ -143,15 +158,11 @@ This catches the common case of a repo being moved or renamed.
 - If no `.source-repo` file exists → report as **old-layout directory** (pre-migration).
 - If `.source-repo` exists but the path it contains no longer exists on disk → report as **orphaned workspace**.
 - Otherwise → skip (healthy).
-Output lists orphans and old-layout dirs with their slug names and (where available) original source paths. Read-only — no deletions.
+Output lists orphans and old-layout dirs with their slug names and (where available) original source paths. Read-only — no deletions. Accepts an optional positional `slug: String` argument — when provided, shows detailed info for that slug only: `.source-repo` contents, session directories, and whether the source repo still exists on disk.
 
 **`DbgCommands::Remove`** (line 123-132): Change `repo: String` to `repo_path: Option<PathBuf>`. When provided, pass to `RepoIdentifier::from_path()`, use `resolve_workspace_dir()` to find the actual workspace directory (handles mismatched slugs), remove. When not provided, detect repo from CWD. Require interactive confirmation unless `--force` is passed. Keep `--dry-run` flag as-is.
 
-**`DbgCommands::RemoveSlug`** (new): Accept a positional `slug: String`. Look up `{workspace_dir}/{git,jj}/<slug>/` directly, remove. Useful for orphans where the source path no longer exists and `Remove` can't resolve it. Require `--force` or interactive confirmation.
-
-**`DbgCommands::Clean`** (new): Run the same scan as `DbgCommands::Orphans`, remove all orphaned and old-layout directories. Show the full list before prompting for interactive confirmation unless `--force` is passed. Support `--dry-run`.
-
-**`DbgCommands::Inspect`** (new, low priority follow-up): Accept a positional `slug: String`. Read and display the `.source-repo` sentinel file contents, list session directories under the slug, and show whether the source repo still exists on disk. Read-only.
+**`DbgCommands::Clean`** (new): When called with no arguments, run the same scan as `DbgCommands::Orphans`, remove all orphaned and old-layout directories. Show the full list before prompting for interactive confirmation unless `--force` is passed. Support `--dry-run`. When called with a positional `slug: String` argument, look up `{workspace_dir}/{git,jj}/<slug>/` directly and remove it — useful for orphans where the source path no longer exists and `Remove` can't resolve it. Require `--force` or interactive confirmation.
 
 **Imports** (line 7): Remove `locate_repo` from imports.
 
@@ -199,9 +210,9 @@ Line 23: Remove `base_repo_dir` from test config TOML. Line 41: Remove `fs::crea
 
 **Workspace path layout change:** Workspace paths change from `{workspace_dir}/git/{relative_path}/{session}` to `{workspace_dir}/git/{hash16}/{session}`. Existing workspaces created under the old layout will not be found or cleaned up by the new code.
 
-**Old-layout and orphan detection:** No warnings on the hot path (`ab new`, `ab spawn`). Old-layout directories and orphaned workspaces are surfaced exclusively via `ab dbg orphans`. Users can clean them up with `ab dbg clean` or remove individual slugs with `ab dbg remove-slug <name>`.
+**Old-layout and orphan detection:** No warnings on the hot path (`ab new`, `ab spawn`). Old-layout directories and orphaned workspaces are surfaced exclusively via `ab dbg orphans`. Users can clean them up with `ab dbg clean` (all orphans) or `ab dbg clean <slug>` (a specific slug).
 
-**`ab spawn` error when workspace doesn't exist:** If `ab spawn -s session --git` is called and `resolve_workspace_dir()` returns `None` (no workspace found for this repo), produce a clear error message including the repo name (via `name()`), session name, and the repo path. Suggest running `ab new` first. Additionally, scan sentinels for orphaned workspaces with matching `file_name()` and include them as a hint if found — this catches the common case of a repo move/rename and points the user toward the orphaned workspace (see Section 4, `Commands::Spawn` session mode).
+**`ab spawn` error when workspace doesn't exist:** If `ab spawn -s session --git` is called and `resolve_workspace_dir()` returns `None` (no workspace found for this repo), produce a clear error message including the full canonical repo path (via `source_path()`) and session name. Suggest running `ab new` first. Additionally, scan sentinels for orphaned workspaces with matching `file_name()` and include them as a hint if found — this catches the common case of a repo move/rename and points the user toward the orphaned workspace (see Section 4, `Commands::Spawn` session mode).
 
 **Migration subcommand (`ab dbg migrate`):** A compiled Rust subcommand that migrates old-layout workspaces to the new content-addressable slug format. Using Rust (not a shell script) ensures the slug computation uses the actual `rapidhash` implementation, eliminating hash divergence. The subcommand:
 1. Reads `base_repo_dir` from the `--base-repo-dir` CLI flag, falling back to the config file value. If neither is set, error with a message explaining that the old base path is needed for migration. Reads `workspace_dir` from the config file.
@@ -209,7 +220,7 @@ Line 23: Remove `base_repo_dir` from test config TOML. Line 41: Remove `fs::crea
 3. For each discovered old-layout repo directory, reconstructs the source repo path as `base_repo_dir / relative_path`.
 4. Verifies the source repo still exists on disk. If not, reports it as orphaned and skips (or deletes with `--clean-orphans`).
 5. Computes the new slug via `workspace_slug()` (the same `rapidhash`-based function used by all other code paths).
-6. Renames the directory to the new slug name. Handles `ENOENT` on rename gracefully (concurrent migration).
+6. Renames the directory to the new slug name. Handles `ENOENT` on rename gracefully (concurrent migration). If the target slug already exists with a `.source-repo` pointing to a different repo, this is a hash collision: report both conflicting paths, skip this repo, and continue migrating the rest. (Same collision error as `ab new` — see Section 1.)
 7. Writes the `.source-repo` sentinel file (canonical path + trailing `\n`, written atomically).
 8. Supports `--dry-run` to preview changes without acting.
 
@@ -225,7 +236,7 @@ The subcommand is removed from the codebase in a follow-up release once the migr
 Additional notes:
 - `base_repo_dir` config field is deprecated and ignored. It can be removed from config files.
 - `--repo` flag on `ab spawn` and positional `repo_name` on `ab new` now accept a filesystem path (not a search string). The fuzzy repo search (`ab new agent-box` matching repos under `base_repo_dir`) is removed with no replacement — users should `cd` into the repo first (the common case) or pass an explicit path. Shell completion and tools like `zoxide` make explicit paths ergonomic. This is an intentional simplification: CWD detection covers the primary workflow, and removing the search avoids the need for a configured scan directory.
-- **Repo moves/renames:** If a repository is moved or renamed after workspaces are created, the canonical path changes and the old workspace slug becomes orphaned. The sentinel file makes this detectable (`.source-repo` will point to a non-existent path). When `ab spawn` fails to find a workspace, it scans for orphans with matching `file_name()` and includes them in the error as a hint. Users can discover all orphans with `ab dbg orphans` and clean them up with `ab dbg clean` or `ab dbg remove-slug <name>`.
+- **Repo moves/renames:** If a repository is moved or renamed after workspaces are created, the canonical path changes and the old workspace slug becomes orphaned. The sentinel file makes this detectable (`.source-repo` will point to a non-existent path). When `ab spawn` fails to find a workspace, it scans for orphans with matching `file_name()` and includes them in the error as a hint. Users can discover all orphans with `ab dbg orphans` and clean them up with `ab dbg clean` (all) or `ab dbg clean <slug>` (specific slug).
 
 ## Dependency order
 
@@ -235,7 +246,7 @@ Additional notes:
 3. Config struct change in config.rs + schema regeneration (no deps, parallel with 0-2)
 4. repo.rs updates incl. `find_git_root_from()`, sentinel file logic, integration test (depends on 2)
 5. display.rs updates (depends on 2)
-6. main.rs CLI changes incl. `DbgCommands::Migrate`, `Orphans`, `Remove`, `RemoveSlug`, `Clean`, and `Inspect` (depends on 3, 4)
+6. main.rs CLI changes incl. `DbgCommands::Migrate`, `Orphans`, `Remove`, and `Clean` (depends on 3, 4)
 7. Test fixtures (depends on all above)
 8. Documentation (depends on all above)
 9. Migration subcommand `ab dbg migrate` (depends on finalized slug format from 1 and CLI structure from 6, can be written in parallel with 4-8)
@@ -251,14 +262,17 @@ Additional notes:
 7. Manual test: verify old config with `base_repo_dir` prints deprecation warning but works
 8. Manual test: verify sentinel file is created and collision detection works
 9. Manual test: `ab dbg orphans` lists old-layout dirs and orphans correctly
-10. Manual test: `ab dbg clean` cleans up orphaned workspaces (with confirmation prompt)
-11. Manual test: `ab dbg remove-slug <name>` removes a specific slug directory
-12. Manual test: `ab dbg remove` with no args detects repo from CWD and prompts for confirmation
-13. Manual test: `ab spawn -s nonexistent --git` produces clear error with suggestion
-14. Manual test: sentinel-verified lookup — rename a slug directory manually, verify `ab spawn` finds it via scan fallback, auto-heals (renames to correct slug), and subsequent spawn uses fast path
-15. Manual test: `ab dbg migrate --dry-run` on an old-layout workspace directory previews correct migration
-16. Manual test: `ab dbg migrate` migrates old-layout workspaces to content-addressable slugs, writes sentinel files, and `ab spawn` finds them via fast path (no scan fallback needed)
-17. Manual test: `ab dbg migrate --base-repo-dir /path/to/repos` works when `base_repo_dir` has been removed from config
-18. Manual test: move a repo, run `ab spawn`, verify error message includes hint about orphaned workspace with matching name
-19. Manual test: `cd` into a session workspace (linked worktree), run `ab info`, verify it shows the source repo's workspaces
-20. Manual test: `ab dbg migrate` correctly handles old-layout workspaces with multi-component relative paths (e.g., `work/project`)
+10. Manual test: `ab dbg orphans <slug>` shows detailed info for a specific slug
+11. Manual test: `ab dbg clean` cleans up all orphaned workspaces (with confirmation prompt)
+12. Manual test: `ab dbg clean <slug>` removes a specific slug directory (with confirmation)
+13. Manual test: `ab dbg remove` with no args detects repo from CWD and prompts for confirmation
+14. Manual test: `ab spawn -s nonexistent --git` produces clear error with suggestion
+15. Manual test: sentinel-verified lookup — rename a slug directory manually, verify `ab spawn` finds it via scan fallback, auto-heals (renames to correct slug), and subsequent spawn uses fast path
+16. Manual test: `ab dbg migrate --dry-run` on an old-layout workspace directory previews correct migration
+17. Manual test: `ab dbg migrate` migrates old-layout workspaces to content-addressable slugs, writes sentinel files, and `ab spawn` finds them via fast path (no scan fallback needed)
+18. Manual test: `ab dbg migrate --base-repo-dir /path/to/repos` works when `base_repo_dir` has been removed from config
+19. Manual test: `ab dbg migrate` with two old-layout repos that hash-collide — verify first migrates, second reports collision and is skipped
+20. Manual test: move a repo, run `ab spawn`, verify error message includes hint about orphaned workspace with matching name
+21. Manual test: `cd` into a session workspace (linked worktree), run `ab info`, verify it shows the source repo's workspaces
+22. Manual test: `ab dbg migrate` correctly handles old-layout workspaces with multi-component relative paths (e.g., `work/project`)
+23. Manual test: `ab new my-project` (bare name, no path separator, not a valid path) produces helpful hint about removed repo search
