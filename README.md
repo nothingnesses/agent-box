@@ -44,6 +44,10 @@ Entry points:
 - [Agent-box CLI reference (generated)](docs/src/reference/agent-box/cli.md)
 - [Portal CLI reference (generated)](docs/src/reference/portal/cli.md)
 
+## Related projects
+
+- [agent-images](https://github.com/nothingnesses/agent-images) - Reproducible OCI container images for AI coding agents, built with Nix. Consumes agent packages from [llm-agents.nix](https://github.com/numtide/llm-agents.nix) and produces images usable with agent-box or standalone Podman/Docker.
+
 ## Development
 
 From the repo root, run checks in the flake devshell:
