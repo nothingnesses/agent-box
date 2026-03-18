@@ -95,7 +95,7 @@
       {
         packages = {
           inherit ab wrappers portal cli mdbook-excalidraw;
-          default = wrappers;
+          default = ab;
         };
 
         apps = {
