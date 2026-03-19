@@ -12,11 +12,11 @@ All repo path computations (in `find_git_root_from`, `from_repo_path`, and disco
 
 **Migration note:** Adding canonicalization changes the workspace path for users who currently access repos through symlinks (e.g., `~/projects -> /mnt/data/projects`). Workspaces previously created via the symlink path become unresolved since the canonical (physical) path is now used. This is an acceptable trade-off for deduplication correctness. The `ab dbg list --unresolved` tooling (step 14) surfaces these cases, and step 17's migration documentation should call out symlinks as another reason workspaces may become unresolved.
 
-**Assumption:** `expand_path` (in `load_config`) calls `std::fs::canonicalize` when the path exists on disk, so `base_repo_dir` and `repo_discovery_dirs` are canonicalized at config load time. If a configured path does not exist at load time, it is stored without symlink resolution. This is acceptable because a non-existent directory cannot contain repos, so `strip_prefix` is never called against it.
+**Assumption:** `path::expand_path` (the free function in [path.rs](common/src/path.rs) line 260, not the `expand_path` method in [config.rs](common/src/config.rs) line 196 which only does tilde expansion) calls `std::fs::canonicalize` when the path exists on disk, so `base_repo_dir` and `repo_discovery_dirs` are canonicalized at config load time. If a configured path does not exist at load time, it is stored without symlink resolution. This is acceptable because a non-existent directory cannot contain repos, so `strip_prefix` is never called against it.
 
 **Where canonicalization must happen:**
 - `find_git_root_from`: canonicalize the return value in all branches (linked worktree, normal repo, submodule).
-- `from_repo_path`: canonicalize the input `repo_path` before calling `strip_prefix`.
+- `from_repo_path`: do NOT canonicalize here. All callers already provide canonicalized paths (`find_git_root_from` canonicalizes its output, and `discover_repos_in_dir` canonicalizes discovered paths). Instead, add a `debug_assert!` that validates the precondition: `debug_assert!(repo_path.components().all(|c| !matches!(c, std::path::Component::ParentDir | std::path::Component::CurDir)), "from_repo_path expects a canonical path, got: {}", repo_path.display())`. Note: this assert catches `.` and `..` components (the most common programming mistakes) but cannot detect unresolved symlinks without hitting the filesystem, which is inappropriate for a debug_assert. Add a comment on the function explaining this contract: callers must pass canonicalized paths (symlinks resolved, no `.`/`..`); `find_git_root_from` and `discover_repos_in_dir` handle canonicalization at their respective boundaries.
 - `discover_repos_in_dir`: canonicalize discovered repo paths before calling `strip_prefix(strip_base)`.
 
 ## Cross-cutting: verify all `find_git_root` / `gix::discover` call sites
@@ -50,8 +50,8 @@ If additional call sites are found, add them to the relevant steps before procee
 - In `load_config()` (after line 823), expand each path in `repo_discovery_dirs`
 - In `load_config()`, after `base_repo_dir_explicit` is set (see step 3), validate: if `repo_discovery_dirs` is non-empty and `base_repo_dir_explicit` is true (and `base_repo_dir` is not `/`), return an error. These two features are incompatible because `strip_prefix(base_repo_dir)` will fail for repos in discovery dirs that are not under `base_repo_dir`. Users should use one or the other:
   ```
-  Error: `repo_discovery_dirs` cannot be used with an explicit `base_repo_dir`
-  (other than "/"). Either remove `base_repo_dir` to use the default,
+  Error: `repo_discovery_dirs` cannot be used with an explicit `base_repo_dir`.
+  Either remove `base_repo_dir` to use the default,
   or remove `repo_discovery_dirs` and place all repos under `base_repo_dir`.
   ```
   Note: this blanket rejection is stricter than necessary (it would be valid if all discovery dirs happen to be under `base_repo_dir`), but keeps the logic simple. If users request more flexibility, a future refinement could validate each discovery dir with `discovery_dir.starts_with(&base_repo_dir)` at config load time instead.
@@ -92,7 +92,9 @@ Key changes inside the function:
 
 ```
 Priority 1: If repo_discovery_dirs is non-empty, scan each dir
+             -> discover_repos_in_dir(discovery_dir, config.base_repo_dir, is_repo) for each dir
 Priority 2: If base_repo_dir was explicitly set AND is not "/", scan it (backward compat)
+             -> discover_repos_in_dir(config.base_repo_dir, config.base_repo_dir, is_repo)
 Priority 3: Neither configured, return error with guidance
 ```
 
@@ -145,16 +147,15 @@ fn find_git_root_from(path: &Path) -> Result<PathBuf> {
 						})?;
 						main_repo.workdir()
 								.ok_or_else(|| eyre!(
-										"linked worktree's main repository at {} is bare and not supported \
-										for session mode. Use a non-bare clone instead",
+										"linked worktree's main repository at {} is bare \
+										and has no working directory",
 										common.display()
 								))
 								.map(|p| p.to_path_buf())?
 				}
 				Kind::Bare => {
 						bail!(
-								"bare repository at {} is not supported for session mode. \
-								Use a non-bare clone instead",
+								"bare repository at {} has no working directory",
 								repo.git_dir().display()
 						)
 				}
@@ -173,6 +174,8 @@ fn find_git_root_from(path: &Path) -> Result<PathBuf> {
 				.wrap_err_with(|| format!("failed to canonicalize repo root: {}", root.display()))
 }
 ```
+
+**Error messages are intentionally generic.** `find_git_root_from` returns neutral errors like "has no working directory" rather than mentioning session mode, since it is also called by `load_config()` and other non-session contexts. Callers that need session-specific guidance (e.g., `resolve_repo_id`) should wrap the error with `.wrap_err("bare repositories are not supported for session mode; use a non-bare clone instead")`.
 
 **Why `gix::open` instead of `common_dir().parent()`:** For a normal repo, `common_dir()` is `.git`, so `.parent()` gives the repo root. But for a linked worktree of a *bare* repository (e.g., at `/path/to/repo.git/`), `common_dir()` is `/path/to/repo.git/`, and `.parent()` gives `/path/to/` instead of the bare repo root. Using `gix::open(common_dir)` directly opens the git directory as a repository, which correctly handles both bare and non-bare main repos. We then check `workdir()` to produce a clear error for the bare case. Note: `gix::open` is preferred over `gix::discover` here because we already know the exact git directory location; `discover` would redundantly search upward from the path.
 
@@ -292,29 +295,30 @@ Add a new `DbgCommands::List` variant that scans all workspace directories and d
 **How it works:**
 - Walk `{workspace_dir}/git/` and `{workspace_dir}/jj/` recursively.
 - Identify session directories by their markers: `.git` *file* (for git worktrees) or `.jj/working_copy/` (for jj workspaces). Important: use `path.join(".git").is_file()`, not `.exists()`, to distinguish git linked worktrees (which have a `.git` file pointing to the main repo) from full git repositories (which have a `.git` directory). Only `.git` files are valid session markers.
-- **Stop descending after finding a session marker.** Once a `.git` file is found in a directory, do not walk into that directory's children. Session worktrees are leaf nodes in the workspace tree; descending further would risk false positives from submodule `.git` files if submodules are initialized inside a session worktree. Implement this using `WalkDir::into_iter()` and calling `iter.skip_current_dir()` after detecting a session marker. Do NOT use `filter_entry` for this, because `filter_entry` returning `false` both excludes the entry from iteration and skips its children, meaning the session directory itself would never be yielded and could not be counted.
+- **Stop descending after finding a session marker.** Once a `.git` file or `.jj/working_copy/` directory is found in a directory, do not walk into that directory's children. Session worktrees/workspaces are leaf nodes in the workspace tree; descending further would risk false positives from submodule `.git` files if submodules are initialized inside a session worktree. Implement this using `WalkDir::into_iter()` and calling `iter.skip_current_dir()` after detecting a session marker. Do NOT use `filter_entry` for this, because `filter_entry` returning `false` both excludes the entry from iteration and skips its children, meaning the session directory itself would never be yielded and could not be counted. The same `skip_current_dir()` pattern applies to both git and jj session markers.
+- **Also skip `.git` directories.** If a full git repository (with a `.git` *directory*, not file) is found inside the workspace tree (e.g., someone manually cloned a repo there), call `iter.skip_current_dir()` to avoid descending into it. Without this guard, linked worktrees inside that nested repo could produce false-positive session matches.
 - The session directory is the immediate parent of the `.git` file marker. Its name is the session name. Everything between `{workspace_dir}/git/` and the session directory name is the repo's relative path. For example, given `{workspace_dir}/git/home/user/repos/myproject/my-session/.git`, the session name is `my-session` and the repo relative path is `home/user/repos/myproject`.
 - Reconstruct the source repo path using `config.base_repo_dir.join(relative_path)` (when `base_repo_dir` is `/`, this is equivalent to prepending `/`).
 - Check if the source repo still exists on disk to determine status.
 
-**Output columns:**
-- **Status:** `healthy` (source repo exists) or `unresolved` (source repo not found at reconstructed path).
-- **Repo name:** `file_name()` of the source path.
-- **Source path:** full reconstructed path.
+**Output columns (in order):**
+- **Source path:** full reconstructed path. Leads the line since it is the most distinguishing field for scanning.
 - **Type:** git/jj.
 - **Sessions:** count of session subdirectories.
+- **Status:** `healthy` (source repo exists) or `unresolved` (source repo not found at reconstructed path). Placed last so that the common case (`healthy`) does not dominate the left edge; `unresolved` entries stand out as the exception.
 
 **Example output:**
 ```
-healthy      agent-box     /home/user/repos/agent-box        git  3 sessions
-healthy      my-project    /home/user/work/my-project        git  1 session
-unresolved   old-repo      /home/user/repos/old-repo         git  2 sessions
+/home/user/repos/agent-box        git  3 sessions  healthy
+/home/user/work/my-project        git  1 session   healthy
+/home/user/repos/old-repo         git  2 sessions  unresolved
 ```
 
 If any workspaces are `unresolved`, print a footer note:
 ```
 Note: "unresolved" means no repo was found at the reconstructed path.
 This can happen if the repo was deleted or if base_repo_dir changed since the workspace was created.
+To clean up: ab dbg remove --unresolved
 ```
 
 **Flags:**
@@ -345,6 +349,8 @@ Existing users with an explicit `base_repo_dir` will continue to work unchanged.
 
 **Automated migration (deferred):** An `ab dbg migrate` command that renames workspace directories from the old layout to the new layout is intentionally deferred. Moving git worktree directories requires rewriting internal `.git` file pointers and the main repo's `$GIT_DIR/worktrees/` entries, which is error-prone. Since keeping the existing `base_repo_dir` setting preserves full backward compatibility, automated migration is only worth building if users actually request it.
 
+**Path length trade-off:** The `/` default produces longer workspace paths (e.g., `{workspace_dir}/git/home/user/repos/myproject/session` vs. `{workspace_dir}/git/myproject/session`). Users who find these unwieldy can set `base_repo_dir` to a common ancestor of their repos for shorter paths. This should be called out in the config reference (step 13).
+
 Similarly, workspaces created via a symlinked path before canonicalization was added will become unresolved, since the tool now resolves symlinks to physical paths before computing workspace paths. Users can identify these with `ab dbg list --unresolved` and clean them up with `ab dbg remove --unresolved`.
 
 **No startup warning.** A startup warning for the current repo was considered but would not trigger in practice: `find_git_root_from` discovers the repo from an existing path, and the round-trip through `from_repo_path` + `source_path` always reconstructs that same path. Stale workspaces from a changed `base_repo_dir` or pre-canonicalization symlink paths are only detectable by scanning the workspace directory tree, which is what `ab dbg list --unresolved` already does. Users are directed to that command via the migration documentation above.
@@ -354,17 +360,16 @@ Similarly, workspaces created via a symlinked path before canonicalization was a
 Tests are written alongside each step rather than batched at the end, so regressions are caught incrementally.
 
 1. Steps 1-3 (config changes) + config deserialization tests from step 12, fix existing test `Config` structs in path.rs and runtime/mod.rs. Compile, all tests pass.
-2. Steps 6-7 (linked worktree resolution in repo.rs) + worktree resolution tests from step 12.
+2. Steps 6-7 and 9 (linked worktree resolution in repo.rs, `find_git_workdir` for local mode, and main.rs local mode update) + worktree resolution tests from step 12. These must be atomic: step 6 changes `find_git_root()` to resolve linked worktrees to the main repo root, which would break local mode if step 9's switch to `find_git_workdir()` is not applied in the same step.
 3. Step 8 (display.rs worktree fix)
-4. Step 9 (main.rs local mode update)
-5. Step 10 (remove debug print)
-6. Step 4 (update `discover_repos_in_dir` signature, update callers) + nested directory mirroring tests from step 12.
-7. Step 5 (rewrite `discover_repo_ids`) + repo discovery tests from step 12.
-8. Step 14 (`ab dbg list` subcommand) + `ab dbg list` tests from step 12.
-9. Step 15 (`ab dbg remove --unresolved`)
-10. Step 16 (`ab new` hint for bare names)
-11. Step 11 (schema)
-12. Step 13 (docs)
+4. Step 10 (remove debug print)
+5. Step 4 (update `discover_repos_in_dir` signature, update callers) + nested directory mirroring tests from step 12.
+6. Step 5 (rewrite `discover_repo_ids`) + repo discovery tests from step 12.
+7. Step 14 (`ab dbg list` subcommand) + `ab dbg list` tests from step 12.
+8. Step 15 (`ab dbg remove --unresolved`)
+9. Step 16 (`ab new` hint for bare names)
+10. Step 11 (schema)
+11. Step 13 (docs)
 
 ## Verification
 
