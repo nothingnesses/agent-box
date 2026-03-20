@@ -2,7 +2,7 @@
 
 ## Context
 
-This plan is part of a larger initiative to enable spawning containers from anywhere on the filesystem. Session/worktree mode currently requires all repos to be under a single `base_repo_dir`, which prevents repos in other locations from using session mode. The changes are split across four issues, each to be submitted as a separate PR:
+Session/worktree mode requires all repos to be under a single `base_repo_dir`, which prevents repos in other locations from using session mode. After discussion on issue #16, the maintainer (0xferrous) and contributor agreed on a set of changes split across four issues, each to be submitted as a separate PR:
 
 - **#16** (Phase 1): Default `base_repo_dir` to `/`, fix linked worktree resolution, add `ab dbg list`, add `ab new` hint for bare names.
 - **#20** (Phase 2): Add `repo_discovery_dirs` config and `--repo-discovery-dir` CLI flag for repo name lookup.
@@ -10,10 +10,6 @@ This plan is part of a larger initiative to enable spawning containers from anyw
 - **#21** (Phase 4): Add command to change `base_workspace_dir`.
 
 Phases 3 and 4 reuse plumbing from earlier phases. Phase 2 depends on Phase 1's config changes. Phases 3 and 4 are independent of each other but both depend on Phase 1.
-
-This document covers Phase 1 (Issue #16) in full.
-
----
 
 ## Cross-cutting concerns
 
@@ -100,7 +96,9 @@ or:
 
 Note: this error message references `repo_discovery_dirs` which is added in Phase 2. This is intentional; the error guides users toward the preferred solution even before Phase 2 lands. Users who only have Phase 1 installed can use `base_repo_dir` instead.
 
-Also add canonicalization to `discover_repos_in_dir`: canonicalize discovered repo paths before calling `strip_prefix`. Unlike `find_git_root_from` (which fails hard), discovery should warn and skip on canonicalization failure, since one dangling symlink or permission issue should not abort discovery of all other repos:
+**Impact on `-r`/`--repo` flag:** After this rewrite, all commands that use `-r`/`--repo` with a repo name (e.g., `ab new --repo my-project`, `ab spawn --repo my-project`) will fail with this error when no discovery dirs are configured and `base_repo_dir` is at the `/` default. This is intentional: `-r` is a discovery feature and requires configured directories to search. Users must either set `base_repo_dir` or (after Phase 2) `repo_discovery_dirs`. Using `-r` with a full path (e.g., `ab new --repo /path/to/repo`) is unaffected since that bypasses discovery.
+
+Also add canonicalization to `discover_repos_in_dir`: canonicalize discovered repo paths before calling `strip_prefix`. This works because `base_repo_dir` (the `strip_prefix` target) is already canonical, guaranteed by `expand_path` in `load_config`. Unlike `find_git_root_from` (which fails hard), discovery should warn and skip on canonicalization failure, since one dangling symlink or permission issue should not abort discovery of all other repos:
 ```rust
 let canonical = match discovered_path.canonicalize() {
     Ok(p) => p,
@@ -174,6 +172,8 @@ fn find_git_root_from(path: &Path) -> Result<PathBuf> {
 
 **Why `gix::open` instead of `common_dir().parent()`:** For a normal repo, `common_dir()` is `.git`, so `.parent()` gives the repo root. But for a linked worktree of a *bare* repository (e.g., at `/path/to/repo.git/`), `common_dir()` is `/path/to/repo.git/`, and `.parent()` gives `/path/to/` instead of the bare repo root. Using `gix::open(common_dir)` directly opens the git directory as a repository, which correctly handles both bare and non-bare main repos. We then check `workdir()` to produce a clear error for the bare case. Note: `gix::open` is preferred over `gix::discover` here because we already know the exact git directory location; `discover` would redundantly search upward from the path.
 
+**Verified against gix 0.77 source:** `gix::open` on a `.git` directory correctly resolves `workdir()` for non-bare repos. The `open_from_paths` function reads `commondir`, detects `is_bare` from config, and when `worktree_dir` is `None` and the repo is not bare and the path looks like a standard `.git` dir, it infers the worktree as the parent directory (see `gix-0.77.0/src/open/repository.rs` lines 327-328). The `Kind::WorkTree { is_linked: bool }` variant is confirmed in the gix 0.77 `repository::Kind` enum.
+
 Redefine `find_git_root()` as `find_git_root_from(&std::env::current_dir()?)`.
 
 **jj workspace resolution:** 0xferrous noted that linked worktree resolution should also be implemented for jj workspaces. jj's equivalent of a linked worktree is a workspace created via `jj workspace add`. When `ab new`/`ab spawn` is run from inside a jj workspace, it should resolve to the main workspace root rather than treating the workspace as a separate repo. The resolution approach depends on what jj_lib exposes for workspace detection; investigate `jj_lib::workspace::Workspace::load` and related APIs to determine how to detect and resolve linked jj workspaces. If jj_lib does not provide a straightforward mechanism, document the limitation and defer to a follow-up.
@@ -183,6 +183,29 @@ Redefine `find_git_root()` as `find_git_root_from(&std::env::current_dir()?)`.
 **File:** [repo.rs](common/src/repo.rs)
 
 Local mode (`--local`) already works correctly in workspaces/worktrees (confirmed by 0xferrous). It should preserve current behavior: use whatever directory the user is in, even if it is a linked worktree. Add `find_git_workdir()` / `find_git_workdir_from(path)` that call `gix::discover()` and return `workdir()` directly without linked worktree resolution. This is distinct from `find_git_root()` which resolves to the main repo.
+
+**Do not canonicalize** the return value. Local mode does not compute workspace paths, so symlink deduplication is not needed; the user's path should be preserved as-is.
+
+```rust
+fn find_git_workdir_from(path: &Path) -> Result<PathBuf> {
+    let repo = gix::discover(path).wrap_err_with(|| {
+        format!("Failed to discover git repository in {}", path.display())
+    })?;
+    match repo.kind() {
+        Kind::Bare => {
+            bail!(
+                "bare repository at {} has no working directory",
+                repo.git_dir().display()
+            )
+        }
+        _ => {
+            repo.workdir()
+                .ok_or_eyre("repository has no working directory")
+                .map(|p| p.to_path_buf())
+        }
+    }
+}
+```
 
 ### 6. Fix worktree resolution in `display.rs`
 
@@ -216,12 +239,12 @@ Remove `println!("debug: {repo_id:?}");`
 
 **File:** [repo.rs](common/src/repo.rs) or [main.rs](ab/src/main.rs)
 
-When `ab new my-project` is run and `gix::discover()` fails (because `my-project` is a bare name, not a valid path), include a hint in the error message:
+When `ab new my-project` is run with a bare name (no path separator), the code path goes through `locate_repo` -> `discover_repo_ids`, not `gix::discover()`. After step 3's rewrite, `discover_repo_ids` returns "no repository discovery directories configured" when no dirs are set. Wrap this error in `main.rs` (or `repo.rs` at the `new_workspace` call site) to detect when the positional arg contains no `/` and enhance the error with a hint:
 ```
 Error: could not find a git repository at 'my-project'
 Hint: use 'cd my-project && ab new' or pass a full path like 'ab new /path/to/my-project'
 ```
-This applies when a positional arg is provided to `ab new` and discovery fails.
+This applies when a positional arg is provided to `ab new`, the arg contains no path separator, and repo discovery fails.
 
 ### 10. Add `ab dbg list` subcommand
 
@@ -234,7 +257,7 @@ Add a new `DbgCommands::List` variant that scans all workspace directories and d
 - Identify session directories by their markers: `.git` *file* (for git worktrees) or `.jj/working_copy/` (for jj workspaces). Important: use `path.join(".git").is_file()`, not `.exists()`, to distinguish git linked worktrees (which have a `.git` file pointing to the main repo) from full git repositories (which have a `.git` directory). Only `.git` files are valid session markers.
 - **Stop descending after finding a session marker.** Once a `.git` file or `.jj/working_copy/` directory is found in a directory, do not walk into that directory's children. Session worktrees/workspaces are leaf nodes in the workspace tree; descending further would risk false positives from submodule `.git` files if submodules are initialized inside a session worktree. Implement this using `WalkDir::into_iter()` and calling `iter.skip_current_dir()` after detecting a session marker. Do NOT use `filter_entry` for this, because `filter_entry` returning `false` both excludes the entry from iteration and skips its children, meaning the session directory itself would never be yielded and could not be counted. The same `skip_current_dir()` pattern applies to both git and jj session markers.
 - **Also skip `.git` directories.** If a full git repository (with a `.git` *directory*, not file) is found inside the workspace tree (e.g., someone manually cloned a repo there), call `iter.skip_current_dir()` to avoid descending into it. Without this guard, linked worktrees inside that nested repo could produce false-positive session matches.
-- The session directory is the immediate parent of the `.git` file marker. Its name is the session name. Everything between `{workspace_dir}/git/` and the session directory name is the repo's relative path. For example, given `{workspace_dir}/git/home/user/repos/myproject/my-session/.git`, the session name is `my-session` and the repo relative path is `home/user/repos/myproject`.
+- The session directory is the immediate parent of the `.git` file marker. Its name is the session name. Everything between `{workspace_dir}/git/` and the session directory name is the repo's relative path. For example, given `{workspace_dir}/git/home/user/repos/myproject/my-session/.git`, the session name is `my-session` and the repo relative path is `home/user/repos/myproject`. The same structure applies to jj workspaces under `{workspace_dir}/jj/`: given `{workspace_dir}/jj/home/user/repos/myproject/my-session/.jj/working_copy/`, the session name is `my-session` and the repo relative path is `home/user/repos/myproject`.
 - Reconstruct the source repo path using `config.base_repo_dir.join(relative_path)` (when `base_repo_dir` is `/`, this is equivalent to prepending `/`).
 - Check if the source repo still exists on disk to determine status.
 
@@ -265,7 +288,7 @@ To clean up: ab dbg remove --unresolved
 
 **File:** [main.rs](ab/src/main.rs) lines 152-162
 
-Add an `--unresolved` flag to the existing `Remove` subcommand. When set, scan all workspace directories (same logic as `ab dbg list`), find unresolved workspaces (source path not found at reconstructed path), and remove them. Respects existing `--dry-run` and `--force` flags. Without `--force`, prompt for confirmation listing what will be deleted.
+Add an `--unresolved` flag to the existing `Remove` subcommand. When set, scan all workspace directories (same logic as `ab dbg list`), find unresolved workspaces (source path not found at reconstructed path), and remove them. Respects existing `--dry-run` and `--force` flags. Without `--force`, prompt for confirmation listing what will be deleted. The confirmation prompt should include a warning: "Note: workspaces may appear unresolved if base_repo_dir was changed. Verify the list above before confirming." This prevents accidental deletion of workspaces that are still valid but were created with a different `base_repo_dir`.
 
 **Concurrency note:** No locking is implemented for workspace removal. If another `ab` process is actively using a workspace, removal could break it. In practice this is low-risk: unresolved workspaces have no source repo on disk, so they are unlikely to be in active use. The confirmation prompt (without `--force`) is the primary safety mechanism.
 
